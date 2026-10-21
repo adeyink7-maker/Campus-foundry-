@@ -1,0 +1,1028 @@
+import {
+  MotivationCard,
+  MotivationalQuote,
+  CampusPost,
+  CampusSnap,
+  PoliticalCandidate,
+  DepartmentResource,
+  CampusClub,
+  CampusNewsArticle,
+  CampusLandmark,
+  ShuttleRoute,
+  StudentLevel
+} from '../types';
+
+export const BANNER_DATABASE: MotivationCard[] = [
+  // POLITICS & SUG PANEL
+  {
+    id: "mandela_01",
+    figureName: "Nelson Mandela",
+    figureImageUrl: "/assets/banners/politics/nelson_mandela.jpg",
+    quoteText: "Leadership is not about titles, positions, or flowcharts. It is about one life influencing another.",
+    domainCategory: "POLITICS",
+    backdropThemeCss: "theme-parliamentary",
+    authorTitle: "Anti-Apartheid Leader & President of South Africa",
+    eraOrContext: "Nobel Peace Prize Laureate & Global Moral Leader",
+    categoryBadge: "Statesmanship & Liberty",
+    author: "Nelson Mandela",
+    quote: "Leadership is not about titles, positions, or flowcharts. It is about one life influencing another.",
+    imageUrl: "/assets/banners/politics/nelson_mandela.jpg",
+    module: "politics"
+  },
+  {
+    id: "awolowo_01",
+    figureName: "Chief Obafemi Awolowo",
+    figureImageUrl: "/assets/banners/politics/obafemi_awolowo.jpg",
+    quoteText: "The violence of direction is often more effective than the speed of movement. Those who desire to lead must conquer their appetite for ease, slumber, and indulgence.",
+    domainCategory: "POLITICS",
+    backdropThemeCss: "theme-parliamentary",
+    authorTitle: "Premier of Western Region & Statesman",
+    eraOrContext: "Architect of Free Universal Education & Modern Governance",
+    categoryBadge: "Discipline & Public Service",
+    author: "Chief Obafemi Awolowo",
+    quote: "The violence of direction is often more effective than the speed of movement. Those who desire to lead must conquer their appetite for ease, slumber, and indulgence.",
+    imageUrl: "/assets/banners/politics/obafemi_awolowo.jpg",
+    module: "politics"
+  },
+  {
+    id: "sankara_01",
+    figureName: "Thomas Sankara",
+    figureImageUrl: "/assets/banners/politics/thomas_sankara.jpg",
+    quoteText: "He who feeds you, controls you. We must dare to invent the future and consume what we produce with our own hands.",
+    domainCategory: "POLITICS",
+    backdropThemeCss: "theme-parliamentary",
+    authorTitle: "President of Burkina Faso & Pan-African Leader",
+    eraOrContext: "Champion of Youth Integrity & Self-Reliance",
+    categoryBadge: "Self-Reliance & Honor",
+    author: "Thomas Sankara",
+    quote: "He who feeds you, controls you. We must dare to invent the future and consume what we produce with our own hands.",
+    imageUrl: "/assets/banners/politics/thomas_sankara.jpg",
+    module: "politics"
+  },
+  {
+    id: "nkrumah_01",
+    figureName: "Kwame Nkrumah",
+    figureImageUrl: "/assets/banners/politics/kwame_nkrumah.jpg",
+    quoteText: "Forward ever, backward never! We face neither East nor West: we face forward.",
+    domainCategory: "POLITICS",
+    backdropThemeCss: "theme-parliamentary",
+    authorTitle: "Pan-Africanist & First President of Ghana",
+    eraOrContext: "Champion of African Independence & Unity",
+    categoryBadge: "African Renaissance",
+    author: "Kwame Nkrumah",
+    quote: "Forward ever, backward never! We face neither East nor West: we face forward.",
+    imageUrl: "/assets/banners/politics/kwame_nkrumah.jpg",
+    module: "politics"
+  },
+
+  // MARKETPLACE & VENDORS PANEL
+  {
+    id: "dangote_01",
+    figureName: "Aliko Dangote",
+    figureImageUrl: "/assets/banners/marketplace/aliko_dangote.jpg",
+    quoteText: "To build a successful business, you have to start small and dream big. Passion, persistence, and consistency will take you anywhere.",
+    domainCategory: "MARKETPLACE",
+    backdropThemeCss: "theme-corporate",
+    authorTitle: "Founder & Chairman, Dangote Group",
+    eraOrContext: "Africa's Foremost Industrialist & Entrepreneur",
+    categoryBadge: "Enterprise & Hustle",
+    author: "Aliko Dangote",
+    quote: "To build a successful business, you have to start small and dream big. Passion, persistence, and consistency will take you anywhere.",
+    imageUrl: "/assets/banners/marketplace/aliko_dangote.jpg",
+    module: "marketplace"
+  },
+  {
+    id: "okonjo_iweala_01",
+    figureName: "Dr. Ngozi Okonjo-Iweala",
+    figureImageUrl: "/assets/banners/marketplace/ngozi_okonjo_iweala.jpg",
+    quoteText: "When you have a vision, you have to stay focused on it despite the obstacles in your path.",
+    domainCategory: "MARKETPLACE",
+    backdropThemeCss: "theme-corporate",
+    authorTitle: "Director-General, World Trade Organization (WTO)",
+    eraOrContext: "Former Finance Minister of Nigeria & Global Economist",
+    categoryBadge: "Global Trade & Integrity",
+    author: "Dr. Ngozi Okonjo-Iweala",
+    quote: "When you have a vision, you have to stay focused on it despite the obstacles in your path.",
+    imageUrl: "/assets/banners/marketplace/ngozi_okonjo_iweala.jpg",
+    module: "marketplace"
+  },
+  {
+    id: "buffett_01",
+    figureName: "Warren Buffett",
+    figureImageUrl: "/assets/banners/marketplace/warren_buffett.jpg",
+    quoteText: "The best investment you can make is an investment in yourself. The more you learn, the more you will earn.",
+    domainCategory: "MARKETPLACE",
+    backdropThemeCss: "theme-corporate",
+    authorTitle: "Chairman & CEO, Berkshire Hathaway",
+    eraOrContext: "Legendary Value Investor & Philanthropist",
+    categoryBadge: "Compounding Value",
+    author: "Warren Buffett",
+    quote: "The best investment you can make is an investment in yourself. The more you learn, the more you will earn.",
+    imageUrl: "/assets/banners/marketplace/warren_buffett.jpg",
+    module: "marketplace"
+  },
+
+  // TECH & CIS FACULTY
+  {
+    id: "emeagwali_01",
+    figureName: "Philip Emeagwali",
+    figureImageUrl: "/assets/banners/tech/philip_emeagwali.jpg",
+    quoteText: "The present is theirs; the future, for which I really worked, is mine. Supercomputing connects thousands of processors to work as one mind.",
+    domainCategory: "TECH",
+    backdropThemeCss: "theme-circuit",
+    authorTitle: "Computer Scientist & Gordon Bell Prize Winner",
+    eraOrContext: "Pioneer of Massively Parallel Supercomputing",
+    categoryBadge: "Computing & Architecture",
+    author: "Philip Emeagwali",
+    quote: "The present is theirs; the future, for which I really worked, is mine. Supercomputing connects thousands of processors to work as one mind.",
+    imageUrl: "/assets/banners/tech/philip_emeagwali.jpg",
+    module: "academics"
+  },
+  {
+    id: "tesla_01",
+    figureName: "Nikola Tesla",
+    figureImageUrl: "/assets/banners/tech/nikola_tesla.jpg",
+    quoteText: "The progressive development of man is vitally dependent on invention. The mind is sharper and keener in seclusion and uninterrupted solitude.",
+    domainCategory: "TECH",
+    backdropThemeCss: "theme-circuit",
+    authorTitle: "Inventor & Electrical Engineer",
+    eraOrContext: "Father of Alternating Current (AC) & Wireless Power",
+    categoryBadge: "Invention & Electrical Power",
+    author: "Nikola Tesla",
+    quote: "The progressive development of man is vitally dependent on invention. The mind is sharper and keener in seclusion and uninterrupted solitude.",
+    imageUrl: "/assets/banners/tech/nikola_tesla.jpg",
+    module: "academics"
+  },
+  {
+    id: "lovelace_01",
+    figureName: "Ada Lovelace",
+    figureImageUrl: "/assets/banners/tech/ada_lovelace.jpg",
+    quoteText: "That brain of mine is something more than merely mortal; as time will show. The Analytical Engine weaves algebraical patterns just as the loom weaves flowers.",
+    domainCategory: "TECH",
+    backdropThemeCss: "theme-circuit",
+    authorTitle: "Mathematician & First Computer Programmer",
+    eraOrContext: "Pioneer of Computational Algorithms",
+    categoryBadge: "Algorithmic Science",
+    author: "Ada Lovelace",
+    quote: "That brain of mine is something more than merely mortal; as time will show. The Analytical Engine weaves algebraical patterns just as the loom weaves flowers.",
+    imageUrl: "/assets/banners/tech/ada_lovelace.jpg",
+    module: "academics"
+  },
+
+  // ARTS & HUMANITIES
+  {
+    id: "soyinka_01",
+    figureName: "Wole Soyinka",
+    figureImageUrl: "/assets/banners/arts/wole_soyinka.jpg",
+    quoteText: "The greatest threat to freedom is the absence of criticism. A tiger does not proclaim his tigritude, he pounces.",
+    domainCategory: "ARTS",
+    backdropThemeCss: "theme-parchment",
+    authorTitle: "Playwright, Poet & Nobel Laureate in Literature",
+    eraOrContext: "First Black African Nobel Laureate in Literature",
+    categoryBadge: "Literary Mastery",
+    author: "Wole Soyinka",
+    quote: "The greatest threat to freedom is the absence of criticism. A tiger does not proclaim his tigritude, he pounces.",
+    imageUrl: "/assets/banners/arts/wole_soyinka.jpg",
+    module: "arts"
+  },
+  {
+    id: "achebe_01",
+    figureName: "Chinua Achebe",
+    figureImageUrl: "/assets/banners/arts/chinua_achebe.jpg",
+    quoteText: "If you don't like someone else's story, you write your own. Until the lions have their own historians, the history of the hunt will always glorify the hunter.",
+    domainCategory: "ARTS",
+    backdropThemeCss: "theme-parchment",
+    authorTitle: "Novelist, Poet & Scholar",
+    eraOrContext: 'Father of Modern African Literature & Author of "Things Fall Apart"',
+    categoryBadge: "African Narrative Voice",
+    author: "Chinua Achebe",
+    quote: "If you don't like someone else's story, you write your own. Until the lions have their own historians, the history of the hunt will always glorify the hunter.",
+    imageUrl: "/assets/banners/arts/chinua_achebe.jpg",
+    module: "arts"
+  },
+
+  // GENERAL & LEADERSHIP
+  {
+    id: "mlk_01",
+    figureName: "Dr. Martin Luther King Jr.",
+    figureImageUrl: "/assets/banners/general/martin_luther_king.jpg",
+    quoteText: "The time is always right to do what is right. If you can't fly, then run; if you can't run, then walk; but whatever you do, you have to keep moving forward.",
+    domainCategory: "GENERAL",
+    backdropThemeCss: "theme-parliamentary",
+    authorTitle: "Civil Rights Icon & Nobel Peace Prize Laureate",
+    eraOrContext: "Champion of Equality & Nonviolent Resistance",
+    categoryBadge: "Vision & Conscience",
+    author: "Dr. Martin Luther King Jr.",
+    quote: "The time is always right to do what is right. If you can't fly, then run; if you can't run, then walk; but whatever you do, you have to keep moving forward.",
+    imageUrl: "/assets/banners/general/martin_luther_king.jpg",
+    module: "feed"
+  }
+];
+
+export const MOTIVATIONAL_QUOTES: MotivationCard[] = BANNER_DATABASE;
+
+export const INITIAL_CAMPUS_SNAPS: CampusSnap[] = [
+  {
+    id: 'snap-1',
+    authorId: 'u_adebayo',
+    authorName: 'Bayo Adeyemi',
+    authorAvatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=200&q=80',
+    authorDept: 'Computer Science',
+    authorLevel: '300L',
+    locationTag: 'Senate Building Walkway',
+    mediaUrl: 'https://images.unsplash.com/photo-1523050854058-8df90110c9f1?auto=format&fit=crop&w=800&q=80',
+    caption: 'Golden hour at the Senate Building after 4 hours of Software Engineering lab! 🌅',
+    createdAt: new Date(Date.now() - 2 * 3600 * 1000).toISOString(),
+    expiresInHours: 22,
+    viewsCount: 142,
+  },
+  {
+    id: 'snap-2',
+    authorId: 'u_funke',
+    authorName: 'Funke Alabi',
+    authorAvatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=200&q=80',
+    authorDept: 'Mass Communication',
+    authorLevel: '200L',
+    locationTag: 'Walk of Fame',
+    mediaUrl: 'https://images.unsplash.com/photo-1517486808906-6ca8b3f04846?auto=format&fit=crop&w=800&q=80',
+    caption: 'Walk of fame vibes! Who is coming for the Faculty debate this Friday? 🎙️✨',
+    createdAt: new Date(Date.now() - 4 * 3600 * 1000).toISOString(),
+    expiresInHours: 20,
+    viewsCount: 289,
+  },
+  {
+    id: 'snap-3',
+    authorId: 'u_chidi',
+    authorName: 'Chidi Okonkwo',
+    authorAvatar: 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?auto=format&fit=crop&w=200&q=80',
+    authorDept: 'Mechanical Engineering',
+    authorLevel: '400L',
+    locationTag: 'Faculty of Engineering (ETF)',
+    mediaUrl: 'https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=800&q=80',
+    caption: 'CAD lab final simulations working on first run. God did! ⚙️💻',
+    createdAt: new Date(Date.now() - 6 * 3600 * 1000).toISOString(),
+    expiresInHours: 18,
+    viewsCount: 310,
+  },
+  {
+    id: 'snap-4',
+    authorId: 'u_zainab',
+    authorName: 'Zainab Bello',
+    authorAvatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80',
+    authorDept: 'Biochemistry',
+    authorLevel: '300L',
+    locationTag: 'Lagos Hostel Quad',
+    mediaUrl: 'https://images.unsplash.com/photo-1509440159596-0249088772ff?auto=format&fit=crop&w=800&q=80',
+    caption: 'Fresh batch of pastry boxes out for tonight exam cramming delivery! 🥐📦',
+    createdAt: new Date(Date.now() - 1 * 3600 * 1000).toISOString(),
+    expiresInHours: 23,
+    viewsCount: 95,
+  },
+  {
+    id: 'snap-5',
+    authorId: 'u_emmanuel',
+    authorName: 'Emmanuel Sanni',
+    authorAvatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80',
+    authorDept: 'Political Science',
+    authorLevel: '400L',
+    locationTag: 'SUB Lounge & Quad',
+    mediaUrl: 'https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=800&q=80',
+    caption: 'SUG Presidential Town Hall session packed to capacity. Democracy in action! 🗳️⚡',
+    createdAt: new Date(Date.now() - 3 * 3600 * 1000).toISOString(),
+    expiresInHours: 21,
+    viewsCount: 450,
+  },
+];
+
+export const INITIAL_CAMPUS_POSTS: CampusPost[] = [
+  {
+    id: 'post-1',
+    authorId: 'u_101',
+    authorName: 'Oluwaseun Balogun',
+    authorAvatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=200&q=80',
+    authorFaculty: 'Faculty of Communication and Information Sciences (CIS)',
+    authorDept: 'Computer Science',
+    authorLevel: '300L',
+    authorRole: 'student',
+    category: 'Academics & GNS',
+    locationTag: 'CIS Block B, Lab 3',
+    content: "📢 GNS 111 & 112 practice portal compilation is now uploaded for all 100L freshers! We assembled 5 years of UNILORIN CBT questions with step-by-step rationales. Check the Academics section -> 100L Resources to download free PDF.",
+    mediaUrl: 'https://images.unsplash.com/photo-1434030216411-0b793f4b4173?auto=format&fit=crop&w=800&q=80',
+    likesCount: 128,
+    likedByMe: false,
+    commentsCount: 24,
+    createdAt: new Date(Date.now() - 3 * 3600 * 1000).toISOString(),
+    isVerifiedStudent: true,
+    pinned: true,
+    comments: [
+      {
+        id: 'c1',
+        postId: 'post-1',
+        authorId: 'u_202',
+        authorName: 'Kehinde Williams',
+        authorLevel: '100L',
+        authorDept: 'Accounting',
+        text: 'God bless you senior Seun! GNS 111 had us stressing all week.',
+        createdAt: new Date(Date.now() - 2 * 3600 * 1000).toISOString(),
+      },
+      {
+        id: 'c2',
+        postId: 'post-1',
+        authorId: 'u_303',
+        authorName: 'Aisha Lawal',
+        authorLevel: '200L',
+        authorDept: 'Microbiology',
+        text: 'Are there also GNS 211 past questions included?',
+        createdAt: new Date(Date.now() - 1 * 3600 * 1000).toISOString(),
+      }
+    ]
+  },
+  {
+    id: 'post-2',
+    authorId: 'u_102',
+    authorName: 'Bukola Johnson',
+    authorAvatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=200&q=80',
+    authorFaculty: 'Faculty of Clinical Sciences',
+    authorDept: 'Nursing Science',
+    authorLevel: '400L',
+    authorRole: 'trader',
+    authorBusinessId: 'biz_bukola_bakes',
+    authorBusinessName: "Bukola's Healthy Bites & Parfait",
+    category: 'Student Hustle & Trades',
+    locationTag: 'Lagos Hostel (Female Wing)',
+    content: "🍓 Fresh Fruit Parfait and Greek Yogurt cups restocked for evening deliveries across Lagos, Abuja, Zamfara, and Private Hostels! 100% organic fruit layers with crunchy granola. Tap on my store profile or DM on WhatsApp for express dorm-door delivery!",
+    mediaUrl: 'https://images.unsplash.com/photo-1488477181946-6428a0291777?auto=format&fit=crop&w=800&q=80',
+    likesCount: 89,
+    likedByMe: true,
+    commentsCount: 15,
+    createdAt: new Date(Date.now() - 5 * 3600 * 1000).toISOString(),
+    isVerifiedStudent: true,
+    comments: [
+      {
+        id: 'c3',
+        postId: 'post-2',
+        authorId: 'u_404',
+        authorName: 'Toluwani Adeleke',
+        authorLevel: '300L',
+        authorDept: 'Economics',
+        text: 'Best parfait in PS! The strawberry layer was incredible yesterday.',
+        createdAt: new Date(Date.now() - 3 * 3600 * 1000).toISOString(),
+      }
+    ]
+  },
+  {
+    id: 'post-3',
+    authorId: 'u_103',
+    authorName: 'Hon. Ibrahim Danladi',
+    authorAvatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80',
+    authorFaculty: 'Faculty of Law',
+    authorDept: 'Public Law',
+    authorLevel: '400L',
+    authorRole: 'student',
+    category: 'SUG & Elections',
+    locationTag: 'Faculty of Law / SUB',
+    content: "⚖️ UNECOM 2026/2027 SUG Presidential Manifesto Town Hall is scheduled for this Thursday, 4:00 PM at the Main Auditorium. My 'Vision 360' manifesto focuses on: 1) 24/7 CBT WiFi Hotspots, 2) Regulated Shuttle Bus Fares (₦150 flat), and 3) Transparent Hostel Maintenance Fund. Let's build a better UNILORIN together!",
+    mediaUrl: 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?auto=format&fit=crop&w=800&q=80',
+    likesCount: 245,
+    likedByMe: false,
+    commentsCount: 68,
+    createdAt: new Date(Date.now() - 8 * 3600 * 1000).toISOString(),
+    isVerifiedStudent: true,
+    comments: []
+  },
+  {
+    id: 'post-4',
+    authorId: 'u_104',
+    authorName: 'David Nwachukwu',
+    authorAvatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=200&q=80',
+    authorFaculty: 'Faculty of Engineering and Technology',
+    authorDept: 'Electrical & Electronics Engineering',
+    authorLevel: '500L',
+    authorRole: 'student',
+    category: 'Events & Sports',
+    locationTag: 'UNILORIN Stadium Complex',
+    content: "⚽ UNILORIN Inter-Faculty Super Cup Semi-Finals kick off tomorrow at the Sports Complex! Engineering Warriors vs CIS Spartans at 3:30 PM. Who are you rooting for? Come cheer your faculty!",
+    mediaUrl: 'https://images.unsplash.com/photo-1508098682722-e99c43a406b2?auto=format&fit=crop&w=800&q=80',
+    likesCount: 164,
+    likedByMe: false,
+    commentsCount: 42,
+    createdAt: new Date(Date.now() - 11 * 3600 * 1000).toISOString(),
+    isVerifiedStudent: true,
+    comments: []
+  },
+];
+
+export const POLITICAL_FELICITATIONS = [
+  {
+    id: 'fel-1',
+    candidateName: 'Hon. Ibrahim Danladi (Dan-Law)',
+    runningFor: 'SUG President (CEC)',
+    bannerText: 'Wishing all UNILORIN Stalwarts, Freshers & Scholars a successful CBT & Harmattan Examination Session! Stay focused, stay resolute.',
+    tag: 'Official Goodwill Message',
+    date: 'Oct 4, 2026',
+    avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80',
+  },
+  {
+    id: 'fel-2',
+    candidateName: 'Adesua Omotayo (Empress)',
+    runningFor: 'SUG Vice President (CEC)',
+    bannerText: 'Warm felicitations to all Unilorites on Academic Excellence Week! Remember to utilize the peer tutorial clinics at Village I & II quads.',
+    tag: 'Welfare & Academic Felicitations',
+    date: 'Oct 3, 2026',
+    avatarUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=200&q=80',
+  },
+  {
+    id: 'fel-3',
+    candidateName: 'Femi Adebisi (CodeMaster)',
+    runningFor: 'NACOS President (CIS Faculty)',
+    bannerText: 'Cheers to all CIS coders, designers, and innovators gearing up for the 2026 Hackathon sprint! Code clean, compile first try.',
+    tag: 'Tech Community Greetings',
+    date: 'Oct 1, 2026',
+    avatarUrl: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&w=200&q=80',
+  },
+];
+
+export const POLITICAL_CANDIDATES: PoliticalCandidate[] = [
+  {
+    id: 'cand-danladi',
+    name: 'Hon. Ibrahim Danladi (Dan-Law)',
+    runningFor: 'SUG President (CEC)',
+    session: '2026/2027 Session',
+    faculty: 'Faculty of Law',
+    department: 'Common & Islamic Law',
+    level: '400L',
+    matricOrSlug: 'danladi-presidency',
+    slogan: 'Vision 360: Equity, Student Welfare & Accountability',
+    photoUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=600&q=80',
+    bannerUrl: 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?auto=format&fit=crop&w=1200&q=80',
+    manifestoSummary: 'A comprehensive 4-pillar agenda aimed at digitizing student services, curbing unjustified shuttle fare hikes, guaranteeing uninterrupted water/power in school hostels, and instituting an emergency student welfare safety net.',
+    manifestoPillars: [
+      {
+        title: '1. Transit & Shuttle Price Stabilization',
+        description: 'Negotiate and sign a binding tripartite MoU between SUG, Park Management, and Student Affairs capping PS to Tanke bus fares at ₦150 maximum with peak-hour monitoring.'
+      },
+      {
+        title: '2. 24/7 Digital Hubs & CBT WiFi Zones',
+        description: 'Partner with campus tech societies to deploy high-speed academic WiFi routers across CBT Halls, CIS Basement, and Main Library reading rooms.'
+      },
+      {
+        title: '3. Student Healthcare & Hostel Living Standards',
+        description: 'Implement rapid response motorcycle ambulances for hostel emergencies and a monthly inspection scoreboard for hostel water purification systems.'
+      },
+      {
+        title: '4. Student Entrepreneurship & Venture Grants',
+        description: 'Establish the SUG Campus Founders Fund granting ₦50,000 to ₦100,000 micro-seed capital each semester to verified student ventures on Campus Foundry.'
+      }
+    ],
+    videoPitchUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+    townhallLink: 'https://meet.google.com/unilorin-sug-townhall',
+    endorsementsCount: 842,
+    endorsedByMe: false,
+    campaignUpdates: [
+      {
+        id: 'u1',
+        title: 'Town Hall with Village I & II Hostel Executives',
+        date: 'Oct 2, 2026',
+        content: 'Met with hostel block governors to discuss reliable power inverter installations for the upcoming exams.'
+      },
+      {
+        id: 'u2',
+        title: 'Endorsement from Engineering Students Association (NUESA)',
+        date: 'Sept 29, 2026',
+        content: 'NUESA congress officially adopted Vision 360 after our joint townhall at ETF hall.'
+      }
+    ],
+    contacts: {
+      whatsapp: '2348039281744',
+      twitter: '@DanLaw_UNILORIN',
+      instagram: '@danladi_for_sug'
+    }
+  },
+  {
+    id: 'cand-adesua',
+    name: 'Adesua Omotayo (Empress)',
+    runningFor: 'SUG Vice President (CEC)',
+    session: '2026/2027 Session',
+    faculty: 'Faculty of Clinical Sciences',
+    department: 'Nursing Science',
+    level: '400L',
+    matricOrSlug: 'adesua-vp',
+    slogan: 'Empower, Educate & Elevate: A Compassionate Voice for All',
+    photoUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=600&q=80',
+    bannerUrl: 'https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=1200&q=80',
+    manifestoSummary: 'Dedicated to student mental health, female sanitary hygiene dispensers across female halls (Village II-V, Robiat Ajike), academic tutorial clinics for 100L students, and cultural inclusion.',
+    manifestoPillars: [
+      {
+        title: '1. Free Sanitary & Wellness Dispensers',
+        description: 'Install emergency sanitary care stations across all female hostels and lecture halls in permanent site and mini campus.'
+      },
+      {
+        title: '2. Fresher Mentorship & GNS Tutorial Clinics',
+        description: 'Organize high-impact weekly revision sessions run by departmental best graduating scholars for freshmen tackling 100L GNS courses.'
+      },
+      {
+        title: '3. Mental Health Peer Helpline',
+        description: 'Establish an anonymous peer counselor chatline in collaboration with the Department of Psychology and Guidance & Counseling Unit.'
+      }
+    ],
+    endorsementsCount: 620,
+    endorsedByMe: true,
+    campaignUpdates: [
+      {
+        id: 'u3',
+        title: 'Health & Wellness Outreach at Abuja Hostel Quad',
+        date: 'Oct 3, 2026',
+        content: 'Conducted free blood pressure and glucose screenings for over 300 students and hostel staff.'
+      }
+    ],
+    contacts: {
+      whatsapp: '2348123456789',
+      twitter: '@Adesua_Empress',
+      instagram: '@empress_adesua'
+    }
+  },
+  {
+    id: 'cand-femi',
+    name: 'Femi Adebisi (CodeMaster)',
+    runningFor: 'NACOS President (CIS Faculty)',
+    session: '2026/2027 Session',
+    faculty: 'Faculty of Communication and Information Sciences (CIS)',
+    department: 'Computer Science',
+    level: '300L',
+    matricOrSlug: 'femi-nacos',
+    slogan: 'Tech Innovation, SIWES Placement & Global Hackathons',
+    photoUrl: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&w=600&q=80',
+    bannerUrl: 'https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?auto=format&fit=crop&w=1200&q=80',
+    manifestoSummary: 'Elevating NACOS into Nigeria’s leading collegiate computing association with direct internship pipelines to Paystack, Flutterwave, Moniepoint, and international remote roles.',
+    manifestoPillars: [
+      {
+        title: '1. Direct Tech Internship & SIWES Pipeline',
+        description: 'Sign hiring partnership agreements with 20+ Lagos and international fintechs for guaranteed 300L/400L student placements.'
+      },
+      {
+        title: '2. Annual UNILORIN Hackathon & ₦2,000,000 Prize Pool',
+        description: 'Host the premier campus innovation sprint bringing venture capitalists and angel investors directly to the CIS Auditorium.'
+      },
+      {
+        title: '3. Cloud & GitHub Pro Certification Subsidies',
+        description: 'Sponsor AWS, Google Cloud, and Azure certification exam vouchers for top-performing departmental programmers.'
+      }
+    ],
+    endorsementsCount: 490,
+    endorsedByMe: false,
+    campaignUpdates: [],
+    contacts: {
+      whatsapp: '2348098765432',
+      twitter: '@FemiCode_UNILORIN'
+    }
+  }
+];
+
+export const DEPARTMENT_RESOURCES: DepartmentResource[] = [
+  // 100L
+  {
+    id: 'res-gns111',
+    title: 'GNS 111: Use of English & Communication Skills Comprehensive CBT Bank',
+    courseCode: 'GNS 111',
+    faculty: 'General Studies Unit',
+    department: 'All Departments',
+    level: '100L',
+    category: 'GNS & Orientation',
+    description: '1,200 verified CBT questions covering Lexis & Structure, Concord, Antonyms/Synonyms, and Sentence Diagramming with answer explanations.',
+    fileType: 'PDF',
+    uploadedBy: 'General Studies Scholar Circle',
+    downloadsCount: 3840,
+    date: 'Harmattan 2026',
+    tags: ['GNS 111', 'Use of English', '100L CBT', 'Past Questions']
+  },
+  {
+    id: 'res-gns112',
+    title: 'GNS 112: Citizenship & Nigerian History CBT Revision Flashcards',
+    courseCode: 'GNS 112',
+    faculty: 'General Studies Unit',
+    department: 'All Departments',
+    level: '100L',
+    category: 'GNS & Orientation',
+    description: 'Summary tables of historical constitutional conferences, pre-colonial governance systems, and fundamental human rights clauses for rapid CBT scoring.',
+    fileType: 'PDF',
+    uploadedBy: 'History & Civics Society',
+    downloadsCount: 2910,
+    date: 'Harmattan 2026',
+    tags: ['GNS 112', 'Citizenship', 'History', 'CBT Revision']
+  },
+  {
+    id: 'res-csc111',
+    title: 'CSC 111: Introduction to Computer Science & Algorithm Flowcharts',
+    courseCode: 'CSC 111',
+    faculty: 'Faculty of Communication and Information Sciences (CIS)',
+    department: 'Computer Science',
+    level: '100L',
+    category: 'Lecture Slides',
+    description: 'Official lecture slide deck annotated with Python flowchart translations and past test solutions.',
+    fileType: 'PDF',
+    uploadedBy: 'CIS Departmental Academic Committee',
+    downloadsCount: 1450,
+    date: 'Harmattan 2026',
+    tags: ['CSC 111', 'Algorithms', 'Flowcharts', 'CIS']
+  },
+
+  // 200L & 300L
+  {
+    id: 'res-csc211',
+    title: 'CSC 211: Object-Oriented Programming (Java / C++) Lab Repository',
+    courseCode: 'CSC 211',
+    faculty: 'Faculty of Communication and Information Sciences (CIS)',
+    department: 'Computer Science',
+    level: '200L',
+    category: 'Past Questions & Solutions',
+    description: 'Complete laboratory assignment walkthroughs, OOP inheritance diagrams, and 5-year exam paper breakdown.',
+    fileType: 'ZIP',
+    uploadedBy: 'NACOS Academic Wing',
+    downloadsCount: 1120,
+    date: 'Rain 2026',
+    tags: ['CSC 211', 'Java', 'OOP', 'Code Repo']
+  },
+  {
+    id: 'res-chm211',
+    title: 'CHM 211: Organic Chemistry Reaction Mechanisms & Synthesis Handbook',
+    courseCode: 'CHM 211',
+    faculty: 'Faculty of Physical Sciences',
+    department: 'Chemistry / Industrial Chemistry',
+    level: '200L',
+    category: 'Lecture Slides',
+    description: 'Illustrated reaction pathways: SN1, SN2, E1, E2, electrophilic aromatic substitution, and NMR spectroscopy interpretation.',
+    fileType: 'PDF',
+    uploadedBy: 'Society of Chemistry Students',
+    downloadsCount: 980,
+    date: 'Harmattan 2026',
+    tags: ['CHM 211', 'Organic Chemistry', 'Reactions']
+  },
+  {
+    id: 'res-mee311',
+    title: 'MEE 311: Applied Thermodynamics & Heat Engines Worked Examples',
+    courseCode: 'MEE 311',
+    faculty: 'Faculty of Engineering and Technology',
+    department: 'Mechanical Engineering',
+    level: '300L',
+    category: 'Past Questions & Solutions',
+    description: 'Otto, Diesel, Brayton and Rankine cycle enthalpy calculation templates with steam tables.',
+    fileType: 'PDF',
+    uploadedBy: 'NUESA Academic Council',
+    downloadsCount: 760,
+    date: 'Rain 2026',
+    tags: ['MEE 311', 'Thermodynamics', 'Engineering']
+  },
+
+  // 400L & 500L
+  {
+    id: 'res-siwes-guide',
+    title: 'SIWES 400L: Complete IT Placement Directory & Technical Logbook Template',
+    courseCode: 'SIWES 400',
+    faculty: 'All Applied & Tech Faculties',
+    department: 'Multi-Departmental',
+    level: '400L',
+    category: 'SIWES & IT Leads',
+    description: 'List of 85+ verified companies in Lagos, Abuja, Port Harcourt, and Ilorin currently accepting UNILORIN interns with sample ITF logbook entries and defense slides.',
+    fileType: 'PDF',
+    uploadedBy: 'UNILORIN Alumni Tech Network',
+    downloadsCount: 3200,
+    date: '2026/2027 Session',
+    tags: ['SIWES', 'Industrial Training', 'IT Placement', 'Logbook']
+  },
+  {
+    id: 'res-project-topics',
+    title: 'Final Year Project (500L/400L) Topic Repository & LaTeX Thesis Template',
+    courseCode: 'PRJ 599',
+    faculty: 'All Faculties',
+    department: 'All Departments',
+    level: '500L',
+    category: 'Final Year Projects',
+    description: 'Standard UNILORIN postgraduate-compliant LaTeX and MS Word thesis templates with chapter guidelines, APA/IEEE reference style sheets, and defense rubric.',
+    fileType: 'ZIP',
+    uploadedBy: 'Senate Academic Planning Office',
+    downloadsCount: 2450,
+    date: '2026/2027 Session',
+    tags: ['Final Year Project', 'Thesis Template', 'LaTeX', 'Defense']
+  }
+];
+
+export const DEPARTMENT_GYRATING_CHANNELS = [
+  {
+    id: 'chan-cis',
+    name: 'CIS Tech Gyrations & Code Hub',
+    faculty: 'Faculty of Communication and Information Sciences (CIS)',
+    activeMembers: 840,
+    recentTopic: 'Who has solved the CSC 311 Graph Algorithm assignment?',
+    avatar: '💻',
+    bgGradient: 'from-blue-600 to-indigo-800',
+  },
+  {
+    id: 'chan-law',
+    name: 'Law Jurists & Moot Court Gist',
+    faculty: 'Faculty of Law',
+    activeMembers: 520,
+    recentTopic: 'Moot Court defense trials this Friday at Africa Hall',
+    avatar: '⚖️',
+    bgGradient: 'from-rose-600 to-amber-800',
+  },
+  {
+    id: 'chan-eng',
+    name: 'Engineering Workshop & CAD Hub',
+    faculty: 'Faculty of Engineering and Technology',
+    activeMembers: 910,
+    recentTopic: 'Thermodynamics lab report submissions deadline updated',
+    avatar: '⚙️',
+    bgGradient: 'from-amber-600 to-orange-800',
+  },
+  {
+    id: 'chan-med',
+    name: 'Clinical & Health Sciences Round',
+    faculty: 'Faculty of Clinical Sciences',
+    activeMembers: 460,
+    recentTopic: 'Anatomy dissection viva tips for 200L/300L students',
+    avatar: '🩺',
+    bgGradient: 'from-emerald-600 to-teal-800',
+  },
+  {
+    id: 'chan-arts',
+    name: 'Arts, Drama & Creative Writers Quad',
+    faculty: 'Faculty of Arts',
+    activeMembers: 630,
+    recentTopic: 'Spoken Word Poetry audition entries open for Convocation',
+    avatar: '🎭',
+    bgGradient: 'from-purple-600 to-pink-800',
+  },
+];
+
+export const CAMPUS_CLUBS: CampusClub[] = [
+  {
+    id: 'club-jci',
+    name: 'Junior Chamber International (JCI) UNILORIN',
+    acronym: 'JCI UNILORIN',
+    category: 'Leadership',
+    description: 'A premier global leadership development organization empowering young active citizens to create positive change through community development projects, debate tournaments, and entrepreneurship summits.',
+    tagline: 'Developing Leaders for a Changing World',
+    logoUrl: 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&w=200&q=80',
+    bannerUrl: 'https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?auto=format&fit=crop&w=800&q=80',
+    memberCount: 280,
+    meetingSchedule: 'Every Saturday, 10:00 AM',
+    meetingVenue: 'Faculty of Arts Lecture Theatre II',
+    presidentName: 'Amb. Temidayo Ajayi',
+    presidentPhone: '2348039281744',
+    isRecruiting: true,
+    membershipFee: '₦2,500 / Session',
+    highlights: ['Annual TOYP Leadership Award', 'Inter-Faculty Public Speaking Championship', 'Hostel Sanitation & Health Drives']
+  },
+  {
+    id: 'club-gdsc',
+    name: 'Google Developer Student Club (GDSC UNILORIN)',
+    acronym: 'GDSC',
+    category: 'Tech & Innovation',
+    description: 'University-based community group for students interested in Google developer technologies. From web/mobile development to Machine Learning, Cloud Architecture, and Solution Challenge sprints.',
+    tagline: 'Bridging the Gap Between Theory & Industry Tech',
+    logoUrl: 'https://images.unsplash.com/photo-1531482615713-2afd69097998?auto=format&fit=crop&w=200&q=80',
+    bannerUrl: 'https://images.unsplash.com/photo-1531403009284-440f080d1e12?auto=format&fit=crop&w=800&q=80',
+    memberCount: 650,
+    meetingSchedule: 'Bi-weekly Wednesdays, 4:30 PM',
+    meetingVenue: 'CIS Basement Tech Hub & Google Meet',
+    presidentName: 'Grace Obinna (GDSC Lead)',
+    presidentPhone: '2348148923019',
+    isRecruiting: true,
+    membershipFee: 'Free (Open Community)',
+    highlights: ['Google Solution Challenge Mentorship', 'Android & Flutter Bootcamps', 'Cloud Study Jams & Free Badges']
+  },
+  {
+    id: 'club-rotaract',
+    name: 'Rotaract Club of UNILORIN (District 9125)',
+    acronym: 'Rotaract',
+    category: 'Humanitarian',
+    description: 'Dedicated to community service, youth fellowship, leadership development, and humanitarian interventions across Kwara State.',
+    tagline: 'Fellowship Through Service',
+    logoUrl: 'https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=200&q=80',
+    bannerUrl: 'https://images.unsplash.com/photo-1559027615-cd4628902d4a?auto=format&fit=crop&w=800&q=80',
+    memberCount: 210,
+    meetingSchedule: 'Sundays, 3:00 PM',
+    meetingVenue: 'Education Lecture Hall 1',
+    presidentName: 'Rtr. Victor Adekunle',
+    presidentPhone: '2349021984421',
+    isRecruiting: true,
+    membershipFee: '₦2,000 / Session',
+    highlights: ['Annual Blood Donation Drive', 'School Book Bag Project for Rural Pupils', 'Rotary Youth Leadership Awards (RYLA)']
+  },
+  {
+    id: 'club-enactus',
+    name: 'Enactus UNILORIN',
+    acronym: 'Enactus',
+    category: 'Tech & Innovation',
+    description: 'An international non-profit mobilizing university students to use the power of entrepreneurial action to improve the quality of life and standard of living for people in need.',
+    tagline: 'A Head for Business, A Heart for the World',
+    logoUrl: 'https://images.unsplash.com/photo-1556761175-5973dc0f32e7?auto=format&fit=crop&w=200&q=80',
+    bannerUrl: 'https://images.unsplash.com/photo-1522202176988-66273c2fd55f?auto=format&fit=crop&w=800&q=80',
+    memberCount: 175,
+    meetingSchedule: 'Fridays, 4:00 PM',
+    meetingVenue: 'Faculty of Agriculture Board Room',
+    presidentName: 'Mariam Suleiman',
+    presidentPhone: '2348167520091',
+    isRecruiting: false,
+    membershipFee: '₦1,500 / Session',
+    highlights: ['National Enactus Competition Finalists', 'Bio-Gas Organic Fertilizer Student Project', 'Campus Recycling Hub']
+  },
+  {
+    id: 'club-drama',
+    name: 'UNILORIN Performing Arts & Drama Troupe',
+    acronym: 'UPA Troupe',
+    category: 'Arts & Culture',
+    description: 'Vibrant creative theater collective producing stage plays, African folklore musicals, contemporary dance choreography, and spoken word poetry.',
+    tagline: 'The Stage is Our Canvas',
+    logoUrl: 'https://images.unsplash.com/photo-1460723237483-7a6dc9d0b212?auto=format&fit=crop&w=200&q=80',
+    bannerUrl: 'https://images.unsplash.com/photo-1507676184212-d03ab07a01bf?auto=format&fit=crop&w=800&q=80',
+    memberCount: 140,
+    meetingSchedule: 'Tuesdays & Thursdays, 5:00 PM',
+    meetingVenue: 'Performing Arts Theatre Complex (Africa Hall)',
+    presidentName: 'Dapo Oyelami',
+    presidentPhone: '2347038192034',
+    isRecruiting: true,
+    membershipFee: '₦1,000 / Session',
+    highlights: ['Annual Convocation Drama Presentation', 'National University Theatre Arts Festival (NUTAF)', 'Spoken Word Nights']
+  }
+];
+
+export const CAMPUS_NEWS: CampusNewsArticle[] = [
+  {
+    id: 'news-harmattan-exams',
+    title: 'UNILORIN Senate Approves Harmonized Harmattan Semester CBT & Written Exam Timetable',
+    slug: 'unilorin-senate-harmattan-exam-schedule',
+    category: 'Exams & CBT',
+    summary: 'The University Senate at its 294th statutory meeting has ratified the final examination timetable. 100L and 200L General Studies (GNS) CBT tests commence on Monday at the CBT Centre.',
+    content: `The Management of the University of Ilorin (UNILORIN) wishes to inform all students, faculty members, and the university community that the revised timetable for the Harmattan Semester Examinations has been officially approved.
+
+Key Highlights:
+1. GNS 111 & 112 Examinations: Scheduled across 4 batches daily at the 500-seater CBT Complex and CBT Extension Centre.
+2. Examination Accreditation: Students must arrive at screening canopies 45 minutes prior to their assigned batch with their laminated Course Registration Forms and Student ID Cards.
+3. Dress Code Compliance: Sub-Deaneries will enforce the university dress code strictly at exam gates.
+4. Health & Security: Emergency paramedical teams will be stationed at the CBT quad.`,
+    publishedAt: 'October 3, 2026',
+    author: 'Directorate of Corporate Affairs',
+    authorRole: 'Official University Senate Bulletin',
+    imageUrl: 'https://images.unsplash.com/photo-1434030216411-0b793f4b4173?auto=format&fit=crop&w=800&q=80',
+    readTime: '3 min read',
+    isBreaking: true,
+    pinned: true,
+  },
+  {
+    id: 'news-wifi-upgrade',
+    title: 'University Upgrades Fiber Optic Backbone: High-Speed Academic WiFi Deployed Across Hostels & Lecture Theatres',
+    slug: 'unilorin-fiber-optic-wifi-upgrade',
+    category: 'Senate & Admin',
+    summary: 'The Information and Communication Technology (COMSIT) Directorate has completed phase two of the campus fiber optic loop, delivering 10Gbps connectivity across permanent site hostels and academic complexes.',
+    content: `In line with the Vice-Chancellor’s vision for a world-class smart campus, COMSIT has installed 120 enterprise wireless access points covering Village I, Village II, Abuja, Kwara, and Zamfara hostels, alongside major faculty complexes.
+
+Students can connect using their institutional portal credentials (matric number and portal password) via the SSID 'UNILORIN-STUDENT-NET'.`,
+    publishedAt: 'October 1, 2026',
+    author: 'COMSIT Directorate',
+    authorRole: 'Technical Bulletin',
+    imageUrl: 'https://images.unsplash.com/photo-1544197150-b99a580bb7a8?auto=format&fit=crop&w=800&q=80',
+    readTime: '2 min read',
+    isBreaking: false,
+    pinned: false,
+  },
+  {
+    id: 'news-super-cup',
+    title: 'UNILORIN League Super Cup: CIS Spartans Edge Engineering Warriors 2-1 in Thrilling Semi-Final',
+    slug: 'unilorin-super-cup-cis-vs-engineering',
+    category: 'Sports & UNILORIN League',
+    summary: 'A 92nd-minute header from Department of Telecommunication star striker secured CIS a spot in the 2026 Inter-Faculty Final at the Main Stadium Complex.',
+    content: `Before a thunderous crowd of over 3,000 students at the UNILORIN Main Sports Stadium, the CIS Spartans showed tactical discipline to overcome a determined Engineering Warriors squad.
+
+The grand finale against Faculty of Law is slated for this coming Saturday at 4:00 PM with the Vice-Chancellor performing the ceremonial kickoff.`,
+    publishedAt: 'September 28, 2026',
+    author: 'UNILORIN Sports Writers Guild',
+    authorRole: 'Campus Sports Desk',
+    imageUrl: 'https://images.unsplash.com/photo-1508098682722-e99c43a406b2?auto=format&fit=crop&w=800&q=80',
+    readTime: '2 min read',
+    isBreaking: false,
+    pinned: false,
+  }
+];
+
+export const CAMPUS_LANDMARKS: CampusLandmark[] = [
+  {
+    id: 'lm-senate',
+    name: 'Senate Building & Administrative Tower',
+    shortName: 'Senate Building',
+    category: 'Administrative',
+    zone: 'Permanent Site',
+    description: 'The iconic multi-storey administrative epicenter of UNILORIN, housing the Vice-Chancellor’s office, Registrar, Student Affairs, and Academic Planning.',
+    popularActivities: ['Matriculation & Convocation photo shoots', 'Student Affairs Inquiries', 'Official Clearances'],
+    openingHours: '8:00 AM - 4:00 PM (Weekdays)',
+    busStopNear: 'Senate Bus Stop',
+    imageUrl: 'https://images.unsplash.com/photo-1541829070764-84a7d30dd3f3?auto=format&fit=crop&w=800&q=80'
+  },
+  {
+    id: 'lm-cbt',
+    name: '500-Seater CBT Examination Complex',
+    shortName: 'CBT Complex',
+    category: 'Academic Complex',
+    zone: 'Permanent Site',
+    description: 'State-of-the-art computer-based testing hub with dual auxiliary halls for GNS examinations, POST-UTME, and departmental continuous assessments.',
+    popularActivities: ['GNS 111/112/211 CBT Examinations', 'Postgraduate Entrance Tests', 'Online Certification'],
+    openingHours: '7:30 AM - 6:00 PM (Exam Sessions)',
+    busStopNear: 'CBT Centre Junction',
+    imageUrl: 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=800&q=80'
+  },
+  {
+    id: 'lm-cis',
+    name: 'Faculty of Communication and Information Sciences (CIS Complex)',
+    shortName: 'CIS Building',
+    category: 'Academic Complex',
+    zone: 'Permanent Site',
+    description: 'Modern faculty complex comprising Computer Science, Mass Comm, Info Science, Library Science, and Telecoms with software labs and digital broadcast studios.',
+    popularActivities: ['Software Coding Labs', 'Campus Radio (UNILORIN 89.3 FM)', 'Tech Hackathons'],
+    openingHours: '7:00 AM - 8:00 PM',
+    busStopNear: 'CIS / Engineering Quad',
+    imageUrl: 'https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=800&q=80'
+  },
+  {
+    id: 'lm-auditorium',
+    name: 'University Main Auditorium (4,000 Capacity)',
+    shortName: 'Main Auditorium',
+    category: 'Academic Complex',
+    zone: 'Permanent Site',
+    description: 'Grand indoor amphitheatre hosting University Inventions, Convocation ceremonies, Inaugural lectures, and SUG Presidential debates.',
+    popularActivities: ['SUG Townhalls', 'Convocation Dramas', 'National Academic Conferences'],
+    openingHours: 'Event-Based Schedules',
+    busStopNear: 'Main Auditorium Loop',
+    imageUrl: 'https://images.unsplash.com/photo-1507676184212-d03ab07a01bf?auto=format&fit=crop&w=800&q=80'
+  },
+  {
+    id: 'lm-sub',
+    name: 'Student Union Building (SUB) & Commercial Quad',
+    shortName: 'SUB Complex',
+    category: 'Food & Amenities',
+    zone: 'Permanent Site',
+    description: 'Heart of student recreational life, featuring the SUG Secretariat, eateries, photocopy centers, gaming lounges, and event spaces.',
+    popularActivities: ['Student Politics Meetings', 'Quick Lunch & Snacks', 'Document Printing & Photocopying'],
+    openingHours: '7:00 AM - 10:00 PM Daily',
+    busStopNear: 'SUB Roundabout',
+    imageUrl: 'https://images.unsplash.com/photo-1522202176988-66273c2fd55f?auto=format&fit=crop&w=800&q=80'
+  },
+  {
+    id: 'lm-hostels-main',
+    name: 'Village I & II Hostels (Lagos & Abuja Female/Male Halls)',
+    shortName: 'Permanent Site Hostels',
+    category: 'Hostels',
+    zone: 'Permanent Site',
+    description: 'Large residential hostel quads for thousands of undergraduate students. Thriving ecosystem of student room deliveries, bakeries, hair stylists, and dorm study groups.',
+    popularActivities: ['Hostel Night Study Groups', 'Pastry & Food Room Delivery', 'Social Hangouts'],
+    openingHours: 'Resident Access 24/7 (Visitors: 8am - 8pm)',
+    busStopNear: 'Lagos Hostel Terminus',
+    imageUrl: 'https://images.unsplash.com/photo-1555854877-bab0e564b8d5?auto=format&fit=crop&w=800&q=80'
+  }
+];
+
+export const SHUTTLE_ROUTES: ShuttleRoute[] = [
+  {
+    id: 'route-ps-tanke',
+    routeName: 'Permanent Site (PS) Terminal ⇄ Tanke Sanrab Gate',
+    from: 'PS Bus Terminal (University Park)',
+    to: 'Tanke Junction / Tipper Garage',
+    fare: 150,
+    frequencyMinutes: '3 - 5 mins',
+    operatingHours: '6:30 AM - 9:30 PM',
+    status: 'Active High Frequency',
+    currentBusesActive: 34
+  },
+  {
+    id: 'route-ps-postoffice',
+    routeName: 'Permanent Site (PS) Terminal ⇄ Post Office / Challenge',
+    from: 'PS Bus Terminal',
+    to: 'Post Office Central Hub',
+    fare: 250,
+    frequencyMinutes: '8 - 12 mins',
+    operatingHours: '6:30 AM - 8:30 PM',
+    status: 'Active High Frequency',
+    currentBusesActive: 18
+  },
+  {
+    id: 'route-ps-mini',
+    routeName: 'Permanent Site (PS) ⇄ Mini Campus (COHS / Sabo Oke)',
+    from: 'PS Bus Terminal',
+    to: 'Mini Campus Main Gate',
+    fare: 200,
+    frequencyMinutes: '15 mins',
+    operatingHours: '7:00 AM - 7:00 PM',
+    status: 'Normal Frequency',
+    currentBusesActive: 8
+  },
+  {
+    id: 'route-campus-keke',
+    routeName: 'Campus Internal Shuttle: Gate ⇄ Hostels ⇄ Faculties',
+    from: 'University Main Gate / Tanke Loop',
+    to: 'Permanent Site Hostels & Academic Quad',
+    fare: 100,
+    frequencyMinutes: '2 mins',
+    operatingHours: '7:00 AM - 10:00 PM',
+    status: 'Active High Frequency',
+    currentBusesActive: 45
+  }
+];
