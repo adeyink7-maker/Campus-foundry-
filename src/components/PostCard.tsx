@@ -23,6 +23,7 @@ import {
 import { CampusPost, StudentBusiness, PostReactionCounts } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { useChat } from '../context/ChatContext';
+import { LongPressAvatar } from './playercard/LongPressAvatar';
 
 interface PostCardProps {
   post: CampusPost;
@@ -154,28 +155,21 @@ export const PostCard: React.FC<PostCardProps> = ({
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-3">
           
-          {/* Avatar with click to profile */}
-          <div 
+          {/* LongPress Avatar with World Cup Player Card on hold */}
+          <LongPressAvatar
+            user={{
+              id: post.authorId,
+              fullName: post.authorName,
+              username: post.authorUsername || `@${post.authorName.toLowerCase().replace(/\s+/g, '_')}`,
+              avatarUrl: post.authorAvatar,
+              department: post.authorDept,
+              level: post.authorLevel,
+              faculty: post.authorFaculty,
+              isVerified: post.isVerifiedStudent,
+            }}
+            size="md"
             onClick={() => onOpenAuthorProfile?.(post.authorId)}
-            className="relative cursor-pointer group/avatar"
-          >
-            {post.authorAvatar ? (
-              <img
-                src={post.authorAvatar}
-                alt={post.authorName}
-                className="h-11 w-11 rounded-2xl object-cover border-2 border-neutral-700 group-hover/avatar:border-amber-400 transition-colors shadow-md"
-              />
-            ) : (
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-500 to-orange-600 font-bold text-neutral-950 text-sm shadow-md">
-                {post.authorName[0]}
-              </div>
-            )}
-            {post.isVerifiedStudent && (
-              <div className="absolute -bottom-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-emerald-500 text-neutral-950 shadow-sm" title="Verified UNILORIN Student">
-                <ShieldCheck className="h-2.5 w-2.5" />
-              </div>
-            )}
-          </div>
+          />
 
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">

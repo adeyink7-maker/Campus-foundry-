@@ -28,6 +28,7 @@ import { AppModule, AppUser } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { useChat } from '../context/ChatContext';
 import { useCart } from '../context/CartContext';
+import { LongPressAvatar } from './playercard/LongPressAvatar';
 
 interface SidebarNavProps {
   currentModule: AppModule;
@@ -411,11 +412,14 @@ export const SidebarNav = ({
                   className="flex items-center gap-2.5 min-w-0 cursor-pointer"
                   onClick={() => handleItemClick('dashboard')}
                 >
-                  <div className={`flex h-9 w-9 items-center justify-center rounded-xl text-xs font-bold text-white shadow-sm shrink-0 ${
-                    isElevatedTrader ? 'bg-amber-600' : 'bg-emerald-600'
-                  }`}>
-                    {currentUser.fullName ? currentUser.fullName[0].toUpperCase() : 'U'}
-                  </div>
+                  <LongPressAvatar
+                    userId={currentUser.id}
+                    avatarUrl={currentUser.avatarUrl}
+                    name={currentUser.fullName}
+                    size="sm"
+                    showRingHint
+                    className="rounded-xl shrink-0"
+                  />
                   <div className="min-w-0 truncate">
                     <div className="text-xs font-bold text-white truncate">
                       {currentUser.fullName}

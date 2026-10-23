@@ -3,6 +3,9 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ChatProvider } from './context/ChatContext';
 import { CartProvider } from './context/CartContext';
+import { PlayerCardProvider } from './context/PlayerCardContext';
+import { PlayerCardOverlay } from './components/playercard/PlayerCardOverlay';
+import { PlayerCardEditorModal } from './components/playercard/PlayerCardEditorModal';
 import { RootNavigator } from './mobile/navigation/RootNavigator';
 
 // Components
@@ -689,6 +692,12 @@ function MainApp() {
       {/* Shopping Cart Drawer */}
       <CartDrawer />
 
+      {/* World Cup Player Card Global Overlay */}
+      <PlayerCardOverlay onOpenProfile={handleViewUserProfile} />
+
+      {/* Player Card Studio / Editor Modal */}
+      <PlayerCardEditorModal />
+
       {/* Global Toast Notification */}
       {toastMessage && (
         <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-2xl border border-emerald-500/30 bg-neutral-900/95 px-5 py-3.5 text-xs sm:text-sm font-semibold text-white shadow-2xl backdrop-blur-md animate-in slide-in-from-bottom-5">
@@ -706,7 +715,9 @@ export default function App() {
     <AuthProvider>
       <ChatProvider>
         <CartProvider>
-          <MainApp />
+          <PlayerCardProvider>
+            <MainApp />
+          </PlayerCardProvider>
         </CartProvider>
       </ChatProvider>
     </AuthProvider>

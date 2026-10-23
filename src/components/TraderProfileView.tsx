@@ -28,6 +28,7 @@ import { useAuth } from '../context/AuthContext';
 import { useChat } from '../context/ChatContext';
 import { useCart } from '../context/CartContext';
 import { EditTraderProfileModal } from './EditTraderProfileModal';
+import { LongPressAvatar } from './playercard/LongPressAvatar';
 
 export interface TraderProfileViewProps {
   business: StudentBusiness;
@@ -308,9 +309,15 @@ export const TraderProfileView: React.FC<TraderProfileViewProps> = ({
 
             {/* Meta Tags */}
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pt-1 text-xs text-neutral-400">
-              <span className="flex items-center gap-1">
-                <User className="h-3.5 w-3.5 text-amber-400" />
-                <span>{business.ownerName}</span>
+              <span className="flex items-center gap-1.5" title="Long-press founder avatar for Player Card">
+                <LongPressAvatar
+                  userId={business.ownerId || `trader_${business.id}`}
+                  name={business.ownerName}
+                  size="xs"
+                  showRingHint
+                  className="rounded-full shadow-xs"
+                />
+                <span className="font-semibold text-neutral-200">{business.ownerName}</span>
               </span>
               <span>•</span>
               <span className="flex items-center gap-1">

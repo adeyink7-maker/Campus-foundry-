@@ -22,6 +22,7 @@ import { CampusSnap } from '../types';
 import { StorySticker } from '../types/stickers';
 import { StickerOverlayContainer } from './stickers/StickerOverlayContainer';
 import { useScreenSecurity } from '../mobile/database/useScreenSecurity';
+import { LongPressAvatar } from './playercard/LongPressAvatar';
 
 interface SnapViewerModalProps {
   snap: CampusSnap | null;
@@ -313,22 +314,27 @@ export const SnapViewerModal = ({
 
         {/* Top Header: Author Avatar, Name, Close Friends Badge & Actions */}
         <div className="absolute top-7 left-3 right-3 z-40 flex items-center justify-between text-white drop-shadow-md">
-          <div 
-            onClick={() => {
-              onClose();
-              onOpenAuthorProfile?.(snap.authorId);
-            }}
-            className="flex items-center gap-2.5 cursor-pointer group"
-          >
-            <div className={`relative rounded-full p-0.5 ${isCloseFriends ? 'ring-2 ring-emerald-400' : 'ring-1 ring-amber-400'}`}>
-              <img
-                src={snap.authorAvatar}
-                alt={snap.authorName}
-                className="h-9 w-9 rounded-full object-cover"
-              />
-            </div>
+          <div className="flex items-center gap-2.5">
+            <LongPressAvatar
+              userId={snap.authorId}
+              avatarUrl={snap.authorAvatar}
+              name={snap.authorName}
+              size="sm"
+              showRingHint
+              className={`rounded-full ${isCloseFriends ? 'ring-2 ring-emerald-400' : 'ring-1 ring-amber-400'}`}
+              onClick={() => {
+                onClose();
+                onOpenAuthorProfile?.(snap.authorId);
+              }}
+            />
 
-            <div>
+            <div 
+              onClick={() => {
+                onClose();
+                onOpenAuthorProfile?.(snap.authorId);
+              }}
+              className="cursor-pointer group"
+            >
               <div className="flex items-center gap-1.5 text-xs font-bold leading-tight group-hover:text-amber-400 transition-colors">
                 <span>{snap.authorName}</span>
                 {isCloseFriends && (

@@ -18,10 +18,13 @@ import {
   Edit3, 
   X,
   Phone,
-  CheckCircle2
+  CheckCircle2,
+  Trophy
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useChat } from '../context/ChatContext';
+import { usePlayerCard } from '../context/PlayerCardContext';
+import { LongPressAvatar } from './playercard/LongPressAvatar';
 import { AppUser, CampusPost, CampusSnap, StudentBusiness } from '../types';
 import { EditProfileModal } from './EditProfileModal';
 
@@ -47,6 +50,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
 }) => {
   const { currentUser, toggleFollowUser } = useAuth();
   const { openChatDrawer } = useChat();
+  const { openPlayerCard, openEditor } = usePlayerCard();
 
   const [activeTab, setActiveTab] = useState<'grid' | 'ventures' | 'saved' | 'activity'>('grid');
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -109,21 +113,22 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
       {/* 1. INSTAGRAM-STYLE HEADER & IDENTITY SECTION */}
       <div className="flex flex-col md:flex-row items-center md:items-start gap-6 md:gap-10 pb-8 border-b border-neutral-800">
         
-        {/* Profile Avatar */}
+        {/* Profile Avatar with Long Press to World Cup Card */}
         <div className="relative group">
-          <img
-            src={activeUser.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300'}
-            alt={activeUser.fullName}
-            className="h-28 w-28 md:h-36 md:w-36 rounded-full object-cover border-4 border-amber-400 p-1 shadow-2xl bg-neutral-900"
+          <LongPressAvatar
+            user={activeUser}
+            size="2xl"
+            avatarClassName="rounded-full border-4 border-amber-400 p-1 shadow-2xl bg-neutral-900"
+            onClick={() => openPlayerCard(activeUser)}
           />
           {isOwner && (
             <button
               type="button"
-              onClick={() => setIsEditModalOpen(true)}
-              className="absolute bottom-1 right-1 p-2 rounded-full bg-amber-500 text-neutral-950 shadow-lg hover:scale-110 transition-transform cursor-pointer"
-              title="Edit Profile"
+              onClick={() => openEditor(activeUser)}
+              className="absolute bottom-1 right-1 p-2 rounded-full bg-amber-500 text-neutral-950 shadow-lg hover:scale-110 transition-transform cursor-pointer z-10"
+              title="Player Card Studio"
             >
-              <Edit3 className="h-4 w-4" />
+              <Trophy className="h-4 w-4" />
             </button>
           )}
         </div>
@@ -144,6 +149,16 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
 
             {/* Action Buttons */}
             <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => openPlayerCard(activeUser)}
+                className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-amber-500/20 to-orange-500/20 hover:from-amber-500/30 hover:to-orange-500/30 text-amber-300 text-xs font-bold shadow transition-all active:scale-95 border border-amber-500/40 flex items-center gap-1.5 cursor-pointer"
+                title="Hold avatar or click to reveal World Cup Player Card"
+              >
+                <Trophy className="h-3.5 w-3.5 text-amber-400" />
+                <span>Player Card</span>
+              </button>
+
               {isOwner ? (
                 <>
                   <button

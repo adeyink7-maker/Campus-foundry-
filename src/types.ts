@@ -632,4 +632,5 @@ export interface PollUpdatedPayload {
   };
 }
 
+export * from './types/playercard';
 

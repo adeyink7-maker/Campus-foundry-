@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { X, Camera, Check, User, Phone, Globe, ShieldCheck } from 'lucide-react';
+import { X, Camera, Check, User, Phone, Globe, ShieldCheck, Award, Sparkles, Eye, Palette } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { usePlayerCard } from '../context/PlayerCardContext';
 import { StudentLevel } from '../types';
 import { HostelSelectMenu } from './HostelSelectMenu';
 import { FacultyDepartmentSelector } from './FacultyDepartmentSelector';
@@ -19,6 +20,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
   onSuccess,
 }) => {
   const { currentUser, updateUser } = useAuth();
+  const { openPlayerCard, openPlayerCardEditor } = usePlayerCard();
 
   const [fullName, setFullName] = useState(currentUser?.fullName || '');
   const [username, setUsername] = useState(currentUser?.username || '');
@@ -230,6 +232,54 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
                 placeholder="https://..."
                 className="w-full px-3 py-2 rounded-xl bg-neutral-800 border border-neutral-700 text-xs text-white focus:outline-none focus:border-amber-400"
               />
+            </div>
+          </div>
+
+          {/* ======================================================== */}
+          {/* PLAYER CARD & WORLD CUP STAGE SECTION                    */}
+          {/* ======================================================== */}
+          <div className="rounded-2xl border border-amber-500/30 bg-gradient-to-br from-amber-500/10 via-neutral-900 to-emerald-500/10 p-4 space-y-3 shadow-inner">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                  <Award className="h-4 w-4" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs font-bold text-white tracking-wide">Player Card Reveal</span>
+                    <span className="rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 px-1.5 py-0.2 text-[9px] font-mono font-bold">
+                      World Cup Intro
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-neutral-400">
+                    Triggers when anyone holds down your avatar anywhere on Campus Foundry
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row items-center gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  openPlayerCardEditor();
+                }}
+                className="w-full sm:w-auto flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-100 text-xs font-bold border border-neutral-700 transition-colors cursor-pointer"
+              >
+                <Palette className="h-3.5 w-3.5 text-amber-400" />
+                <span>Customize Stage & Achievements</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => openPlayerCard(currentUser.id)}
+                className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-xs font-bold border border-amber-500/40 transition-colors cursor-pointer"
+                title="Preview World Cup reveal live"
+              >
+                <Eye className="h-3.5 w-3.5" />
+                <span>Live Preview</span>
+              </button>
             </div>
           </div>
 

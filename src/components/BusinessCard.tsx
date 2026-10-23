@@ -14,6 +14,7 @@ import {
 import { StudentBusiness } from '../types';
 import { useChat } from '../context/ChatContext';
 import { useCart } from '../context/CartContext';
+import { LongPressAvatar } from './playercard/LongPressAvatar';
 
 interface BusinessCardProps {
   business: StudentBusiness;
@@ -125,12 +126,20 @@ export const BusinessCard = ({ business, onSelect, onOpenTraderProfile }: Busine
                 onOpenTraderProfile(business);
               }
             }}
-            className="truncate mr-2 hover:text-amber-400 transition-colors cursor-pointer group/trader flex items-center gap-1.5"
-            title="View Trader Profile & Portfolio"
+            className="truncate mr-2 hover:text-amber-400 transition-colors cursor-pointer group/trader flex items-center gap-2"
+            title="Long-press for Player Card or tap for Profile"
           >
-            <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-amber-500/20 text-amber-400 font-bold border border-amber-500/30 shrink-0">
-              <Store className="h-3 w-3" />
-            </div>
+            <LongPressAvatar
+              userId={business.ownerId || `trader_${business.id}`}
+              name={business.ownerName}
+              size="sm"
+              showRingHint
+              className="h-7 w-7 rounded-lg shrink-0"
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenTraderProfile?.(business);
+              }}
+            />
             <div className="truncate">
               <span className="text-neutral-200 font-bold block truncate group-hover/trader:text-amber-400">{business.ownerName}</span>
               <span className="text-neutral-500 text-[10px] truncate block">{business.studentDept} ({business.studentLevel})</span>
