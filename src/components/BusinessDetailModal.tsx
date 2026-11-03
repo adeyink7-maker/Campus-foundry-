@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   X, 
@@ -16,11 +16,13 @@ import {
   Phone,
   Store,
   User,
-  Heart
+  Heart,
+  Package
 } from 'lucide-react';
-import { StudentBusiness, StudentServiceItem, ChatOrderSnippet } from '../types';
+import { StudentBusiness, StudentServiceItem, ChatOrderSnippet, Product } from '../types';
+import { listProducts } from '../services/marketplace';
 import { useAuth } from '../context/AuthContext';
-import { useChat } from '../context/ChatContext';
+import { useMarketplaceChat } from '../context/MarketplaceChatContext';
 import { useCart } from '../context/CartContext';
 import { ALL_UNILORIN_HOSTELS } from '../data/mockData';
 import { HostelSelectMenu } from './HostelSelectMenu';
@@ -29,11 +31,12 @@ interface BusinessDetailModalProps {
   business: StudentBusiness | null;
   onClose: () => void;
   onOpenTraderProfile?: (business: StudentBusiness) => void;
+  onRequireAuth?: (action?: () => void) => void;
 }
 
-export const BusinessDetailModal = ({ business, onClose, onOpenTraderProfile }: BusinessDetailModalProps) => {
+export const BusinessDetailModal = ({ business, onClose, onOpenTraderProfile, onRequireAuth }: BusinessDetailModalProps) => {
   const { currentUser } = useAuth();
-  const { openChatWithBusiness } = useChat();
+  const { openChatWithBusiness } = useMarketplaceChat();
   const { addToCart, toggleWishlist, isWishlisted } = useCart();
   
   // Track quantities for items
@@ -45,6 +48,43 @@ export const BusinessDetailModal = ({ business, onClose, onOpenTraderProfile }: 
   const [customNote, setCustomNote] = useState('');
   const [addedToast, setAddedToast] = useState(false);
 
+  // Products from Supabase 'products' table for this business
+  const [products, setProducts] = useState<Product[]>([]);
+  const [isLoadingProducts, setIsLoadingProducts] = useState(false);
+  const [productsError, setProductsError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!business?.id) {
+      setProducts([]);
+      return;
+    }
+    let isMounted = true;
+    setIsLoadingProducts(true);
+    setProductsError(null);
+
+    listProducts({ businessId: business.id, pageSize: 100 })
+      .then((res) => {
+        if (isMounted) {
+          setProducts(res.products);
+        }
+      })
+      .catch((err) => {
+        console.warn('[BusinessDetailModal] failed to load products:', err);
+        if (isMounted) {
+          setProductsError('Unable to load products.');
+        }
+      })
+      .finally(() => {
+        if (isMounted) {
+          setIsLoadingProducts(false);
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [business?.id]);
+
   // Lock body scroll while modal is active (Must be called before any early return)
   useEffect(() => {
     if (!business) return;
@@ -54,6 +94,30 @@ export const BusinessDetailModal = ({ business, onClose, onOpenTraderProfile }: 
       document.body.style.overflow = originalOverflow;
     };
   }, [business]);
+
+  // Unified items list: prefers real products from Supabase products table
+  const displayItems = useMemo(() => {
+    if (products.length > 0) {
+      return products.map((p) => ({
+        id: p.id,
+        name: p.title,
+        price: p.price,
+        description: p.description,
+        imageUrl: p.images && p.images.length > 0 ? p.images[0] : null,
+        stockQuantity: p.stockQuantity,
+        isProduct: true,
+      }));
+    }
+    return (business?.services || []).map((s) => ({
+      id: s.id,
+      name: s.name,
+      price: s.price,
+      description: s.description,
+      imageUrl: null as string | null,
+      stockQuantity: null as number | null,
+      isProduct: false,
+    }));
+  }, [products, business?.services]);
 
   if (!business) return null;
 
@@ -69,18 +133,23 @@ export const BusinessDetailModal = ({ business, onClose, onOpenTraderProfile }: 
   };
 
   // Calculate order total
-  const selectedItems = business.services.filter((s) => (quantities[s.id] || 0) > 0);
+  const selectedItems = displayItems.filter((s) => (quantities[s.id] || 0) > 0);
   const totalAmount = selectedItems.reduce((acc, item) => {
     return acc + item.price * (quantities[item.id] || 0);
   }, 0);
 
   const handleAddToCart = () => {
+    if (!currentUser) {
+      onRequireAuth?.(() => handleAddToCart());
+      return;
+    }
     if (selectedItems.length === 0) {
-      // If none selected with counter, add the first/main service with quantity 1
-      const defaultService = business.services[0] || {
+      // If none selected with counter, add the first item with quantity 1
+      const defaultItem = displayItems[0] || {
         id: 'svc_default',
         name: business.name + ' Service',
         price: business.startingPrice,
+        isProduct: false,
       };
       addToCart({
         businessId: business.id,
@@ -88,9 +157,10 @@ export const BusinessDetailModal = ({ business, onClose, onOpenTraderProfile }: 
         businessImageUrl: business.imageUrl,
         businessWhatsapp: business.whatsapp,
         traderHostel: business.hostelLocation,
-        serviceId: defaultService.id,
-        name: defaultService.name,
-        price: defaultService.price,
+        serviceId: defaultItem.id,
+        productId: defaultItem.isProduct ? defaultItem.id : undefined,
+        name: defaultItem.name,
+        price: defaultItem.price,
         quantity: 1,
         customNotes: customNote.trim() || undefined,
       });
@@ -103,6 +173,7 @@ export const BusinessDetailModal = ({ business, onClose, onOpenTraderProfile }: 
           businessWhatsapp: business.whatsapp,
           traderHostel: business.hostelLocation,
           serviceId: item.id,
+          productId: item.isProduct ? item.id : undefined,
           name: item.name,
           price: item.price,
           quantity: quantities[item.id] || 1,
@@ -144,32 +215,17 @@ export const BusinessDetailModal = ({ business, onClose, onOpenTraderProfile }: 
     return `https://wa.me/${cleanNumber}?text=${encodeURIComponent(message)}`;
   };
 
-  const handleStartInAppChat = () => {
-    let orderSnippet: ChatOrderSnippet | undefined;
-    if (selectedItems.length > 0) {
-      orderSnippet = {
-        items: selectedItems.map((item) => ({
-          name: item.name,
-          quantity: quantities[item.id] || 1,
-          price: item.price,
-        })),
-        totalAmount,
-        deliveryRoom: fullCustomerRoom.trim() || undefined,
-        status: 'pending',
-      };
+  const handleStartInAppChat = async () => {
+    if (!currentUser) {
+      onRequireAuth?.(() => handleStartInAppChat());
+      return;
     }
-
-    let initialMsg = '';
-    if (selectedItems.length > 0) {
-      initialMsg = `Hello ${business.ownerName}, I'd like to order: ${selectedItems
-        .map((i) => `${quantities[i.id]}x ${i.name}`)
-        .join(', ')}. Delivery to: ${fullCustomerRoom || 'Hostel'}.`;
-    } else {
-      initialMsg = `Hello ${business.ownerName}, I have an inquiry about ${business.name}!`;
+    try {
+      onClose();
+      await openChatWithBusiness(business.id);
+    } catch (err) {
+      console.error('[BusinessDetailModal] Failed to open marketplace chat:', err);
     }
-
-    onClose();
-    openChatWithBusiness(business, initialMsg, orderSnippet);
   };
 
   return (
@@ -198,7 +254,13 @@ export const BusinessDetailModal = ({ business, onClose, onOpenTraderProfile }: 
           {/* Wishlist toggle button */}
           <button
             type="button"
-            onClick={() => toggleWishlist(business)}
+            onClick={() => {
+              if (!currentUser) {
+                onRequireAuth?.(() => toggleWishlist(business));
+                return;
+              }
+              toggleWishlist(business);
+            }}
             title={isSaved ? 'Remove from saved' : 'Save to wishlist'}
             className={`absolute top-3 right-12 rounded-full p-2 backdrop-blur-md border transition-colors ${
               isSaved
@@ -243,6 +305,11 @@ export const BusinessDetailModal = ({ business, onClose, onOpenTraderProfile }: 
                 <span className="text-xs font-semibold uppercase tracking-wider text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 rounded-md">
                   {business.category}
                 </span>
+                {currentUser && (business.ownerId === currentUser.id || (business.ownerEmail && currentUser.email && business.ownerEmail.toLowerCase() === currentUser.email.toLowerCase())) && (
+                  <span className="text-xs font-extrabold uppercase tracking-wider text-amber-300 bg-amber-500/20 border border-amber-500/30 px-2.5 py-0.5 rounded-md">
+                    Your listing
+                  </span>
+                )}
                 <span className="text-neutral-500 text-xs">·</span>
                 <span className="text-xs text-neutral-400">{business.campus}</span>
               </div>
@@ -277,7 +344,7 @@ export const BusinessDetailModal = ({ business, onClose, onOpenTraderProfile }: 
               <div>
                 <div className="flex items-center gap-1.5">
                   <span className="text-sm font-bold text-white group-hover:text-amber-400 transition-colors">{business.ownerName}</span>
-                  <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
+                  {business.verifiedStudent && <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />}
                 </div>
                 <div className="text-xs text-neutral-400">
                   {business.studentDept} · {business.studentLevel} · View Trader Portfolio ➔
@@ -288,82 +355,123 @@ export const BusinessDetailModal = ({ business, onClose, onOpenTraderProfile }: 
             <div className="text-right">
               <span className="text-[10px] text-amber-400 uppercase tracking-wider font-bold block">Full Portfolio</span>
               <span className="font-mono text-emerald-400 font-bold text-xs">
-                {business.services?.length || 0} Listed Items
+                {displayItems.length} Listed Items
               </span>
             </div>
           </div>
 
-          {/* Service & Item Catalog with Quantity Selectors */}
+          {/* Products & Services Catalog from Supabase 'products' table */}
           <div>
             <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-bold text-white uppercase tracking-wider">
-                Services & Menu Items
+              <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                <Package className="h-4 w-4 text-amber-400" />
+                <span>{products.length > 0 ? 'Store Products & Menu' : 'Services & Menu Items'}</span>
               </h3>
               <span className="text-[11px] text-neutral-500">
                 Select items to calculate total & order
               </span>
             </div>
 
-            <div className="space-y-2.5">
-              {business.services.map((item) => {
-                const qty = quantities[item.id] || 0;
-                return (
-                  <div
-                    key={item.id}
-                    className={`flex items-center justify-between p-3 rounded-xl border transition-all ${
-                      qty > 0
-                        ? 'border-emerald-500/50 bg-emerald-950/20'
-                        : 'border-neutral-800 bg-neutral-950/50 hover:border-neutral-700'
-                    }`}
-                  >
-                    <div className="mr-3 flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs sm:text-sm font-bold text-white">
-                          {item.name}
-                        </span>
-                        {qty > 0 && (
-                          <span className="rounded bg-emerald-500/20 text-emerald-400 text-[10px] font-mono px-1.5 py-0.2 font-bold">
-                            {qty} in cart
-                          </span>
-                        )}
-                      </div>
-                      {item.description && (
-                        <p className="text-[11px] text-neutral-400 mt-0.5 leading-snug">
-                          {item.description}
-                        </p>
-                      )}
-                      <div className="font-mono text-emerald-400 font-bold text-xs mt-1">
-                        ₦{item.price.toLocaleString()}
+            {isLoadingProducts ? (
+              /* Loading Skeletons */
+              <div className="space-y-2.5">
+                {[1, 2].map((n) => (
+                  <div key={n} className="flex items-center justify-between p-3 rounded-xl border border-neutral-800 bg-neutral-950/40 animate-pulse">
+                    <div className="flex items-center gap-3 flex-1">
+                      <div className="h-12 w-12 rounded-lg bg-neutral-800" />
+                      <div className="space-y-2 flex-1">
+                        <div className="h-3.5 w-1/3 rounded bg-neutral-800" />
+                        <div className="h-3 w-1/2 rounded bg-neutral-800" />
                       </div>
                     </div>
-
-                    {/* Quantity Modifier */}
-                    <div className="flex items-center gap-2 bg-neutral-900 border border-neutral-800 rounded-xl p-1 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => handleQuantityChange(item.id, -1)}
-                        disabled={qty === 0}
-                        className="h-7 w-7 flex items-center justify-center rounded-lg text-neutral-400 hover:text-white hover:bg-neutral-800 disabled:opacity-30 disabled:hover:bg-transparent"
-                      >
-                        <Minus className="h-3.5 w-3.5" />
-                      </button>
-
-                      <span className="w-5 text-center font-mono text-xs font-bold text-white">
-                        {qty}
-                      </span>
-
-                      <button
-                        type="button"
-                        onClick={() => handleQuantityChange(item.id, 1)}
-                        className="h-7 w-7 flex items-center justify-center rounded-lg bg-emerald-600/30 text-emerald-300 hover:bg-emerald-600 hover:text-white transition-colors"
-                      >
-                        <Plus className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
+                    <div className="h-8 w-20 rounded-xl bg-neutral-800" />
                   </div>
-                );
-              })}
-            </div>
+                ))}
+              </div>
+            ) : displayItems.length === 0 ? (
+              <div className="text-center py-8 rounded-xl border border-neutral-800 bg-neutral-950/30">
+                <Package className="h-7 w-7 text-neutral-500 mx-auto mb-2" />
+                <p className="text-xs text-neutral-400">No products listed by this trader yet.</p>
+              </div>
+            ) : (
+              <div className="space-y-2.5">
+                {displayItems.map((item) => {
+                  const qty = quantities[item.id] || 0;
+                  const isSoldOut = item.stockQuantity === 0;
+                  return (
+                    <div
+                      key={item.id}
+                      className={`flex items-center justify-between p-3 rounded-xl border transition-all ${
+                        qty > 0
+                          ? 'border-emerald-500/50 bg-emerald-950/20'
+                          : 'border-neutral-800 bg-neutral-950/50 hover:border-neutral-700'
+                      }`}
+                    >
+                      <div className="mr-3 flex items-center gap-3 flex-1 min-w-0">
+                        {item.imageUrl && (
+                          <img
+                            src={item.imageUrl}
+                            alt={item.name}
+                            className="h-12 w-12 rounded-lg object-cover bg-neutral-900 border border-neutral-800 shrink-0"
+                            onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                          />
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs sm:text-sm font-bold text-white truncate">
+                              {item.name}
+                            </span>
+                            {qty > 0 && (
+                              <span className="rounded bg-emerald-500/20 text-emerald-400 text-[10px] font-mono px-1.5 py-0.2 font-bold shrink-0">
+                                {qty} in cart
+                              </span>
+                            )}
+                            {isSoldOut && (
+                              <span className="rounded bg-rose-500/20 text-rose-400 text-[10px] font-mono px-1.5 py-0.2 font-bold shrink-0">
+                                Sold Out
+                              </span>
+                            )}
+                          </div>
+                          {item.description && (
+                            <p className="text-[11px] text-neutral-400 mt-0.5 leading-snug line-clamp-1">
+                              {item.description}
+                            </p>
+                          )}
+                          <div className="font-mono text-emerald-400 font-bold text-xs mt-1">
+                            ₦{item.price.toLocaleString()}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Quantity Modifier */}
+                      <div className="flex items-center gap-2 bg-neutral-900 border border-neutral-800 rounded-xl p-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => handleQuantityChange(item.id, -1)}
+                          disabled={qty === 0 || isSoldOut}
+                          className="h-7 w-7 flex items-center justify-center rounded-lg text-neutral-400 hover:text-white hover:bg-neutral-800 disabled:opacity-30 disabled:hover:bg-transparent"
+                        >
+                          <Minus className="h-3.5 w-3.5" />
+                        </button>
+
+                        <span className="w-5 text-center font-mono text-xs font-bold text-white">
+                          {qty}
+                        </span>
+
+                        <button
+                          type="button"
+                          onClick={() => handleQuantityChange(item.id, 1)}
+                          disabled={isSoldOut}
+                          className="h-7 w-7 flex items-center justify-center rounded-lg bg-emerald-600/30 text-emerald-300 hover:bg-emerald-600 hover:text-white transition-colors disabled:opacity-30 disabled:hover:bg-transparent"
+                        >
+                          <Plus className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {/* Delivery Note & Customer Hostel Input */}
@@ -411,36 +519,50 @@ export const BusinessDetailModal = ({ business, onClose, onOpenTraderProfile }: 
             </div>
           </div>
 
-          <div className="flex items-center gap-2.5 w-full sm:w-auto flex-wrap sm:flex-nowrap">
-            {/* Add to Cart CTA */}
+          {currentUser && (business.ownerId === currentUser.id || (business.ownerEmail && currentUser.email && business.ownerEmail.toLowerCase() === currentUser.email.toLowerCase())) ? (
             <button
               type="button"
-              onClick={handleAddToCart}
-              className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 hover:border-emerald-500/50 px-3.5 py-3 text-xs sm:text-sm font-bold text-white transition-all cursor-pointer shadow-sm"
+              onClick={() => {
+                onClose();
+                onOpenTraderProfile?.(business);
+              }}
+              className="w-full sm:w-auto flex items-center justify-center gap-2 rounded-xl bg-amber-500 hover:bg-amber-400 px-6 py-3 text-xs sm:text-sm font-extrabold text-neutral-950 shadow-lg transition-all cursor-pointer"
             >
-              <ShoppingBag className="h-4 w-4 text-emerald-400" />
-              <span>{addedToast ? 'Added to Cart ✓' : 'Add to Cart'}</span>
+              <Store className="h-4 w-4" />
+              <span>Manage Store</span>
             </button>
+          ) : (
+            <div className="flex items-center gap-2.5 w-full sm:w-auto flex-wrap sm:flex-nowrap">
+              {/* Add to Cart CTA */}
+              <button
+                type="button"
+                onClick={handleAddToCart}
+                className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 hover:border-emerald-500/50 px-3.5 py-3 text-xs sm:text-sm font-bold text-white transition-all cursor-pointer shadow-sm"
+              >
+                <ShoppingBag className="h-4 w-4 text-emerald-400" />
+                <span>{addedToast ? 'Added to Cart ✓' : 'Add to Cart'}</span>
+              </button>
 
-            <button
-              type="button"
-              onClick={handleStartInAppChat}
-              className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 px-3.5 py-3 text-xs sm:text-sm font-bold text-white shadow-lg shadow-emerald-950/50 transition-all cursor-pointer"
-            >
-              <MessageSquare className="h-4 w-4" />
-              <span>Chat In-App</span>
-            </button>
+              <button
+                type="button"
+                onClick={handleStartInAppChat}
+                className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 px-3.5 py-3 text-xs sm:text-sm font-bold text-white shadow-lg shadow-emerald-950/50 transition-all cursor-pointer"
+              >
+                <MessageSquare className="h-4 w-4" />
+                <span>Chat In-App</span>
+              </button>
 
-            <a
-              href={generateWhatsAppUrl()}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 rounded-xl border border-neutral-700 bg-neutral-800 hover:bg-neutral-700 hover:text-white px-3.5 py-3 text-xs sm:text-sm font-bold text-neutral-200 transition-all"
-            >
-              <MessageCircle className="h-4 w-4 text-emerald-400" />
-              <span>WhatsApp</span>
-            </a>
-          </div>
+              <a
+                href={generateWhatsAppUrl()}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 rounded-xl border border-neutral-700 bg-neutral-800 hover:bg-neutral-700 hover:text-white px-3.5 py-3 text-xs sm:text-sm font-bold text-neutral-200 transition-all"
+              >
+                <MessageCircle className="h-4 w-4 text-emerald-400" />
+                <span>WhatsApp</span>
+              </a>
+            </div>
+          )}
         </div>
 
       </motion.div>

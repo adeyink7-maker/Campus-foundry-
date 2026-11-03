@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { 
   ShoppingBag, 
@@ -9,23 +9,44 @@ import {
   Plus, 
   Compass, 
   ShieldCheck, 
-  Layers, 
   ArrowRight,
-  Zap,
-  SlidersHorizontal,
-  ChevronRight,
-  CheckCircle2,
-  TrendingUp,
-  Package
+  Package,
+  AlertCircle,
+  Filter,
+  X,
+  RefreshCw,
+  Clock,
+  Star
 } from 'lucide-react';
-import { StudentBusiness, BusinessBlueprint, UserRole } from '../types';
+import { StudentBusiness, BusinessBlueprint, UserRole, Product, ProductKind } from '../types';
 import { BusinessDirectory } from './BusinessDirectory';
 import { CampusHubsView } from './CampusHubsView';
 import { TraderBlueprintsView } from './TraderBlueprintsView';
 import { CampusDirectoryView } from './CampusDirectoryView';
 import { HeroSection } from './HeroSection';
 import { TraderProfileView } from './TraderProfileView';
+import { TraderDashboard } from './TraderDashboard';
+import { ProductCard } from './ProductCard';
+import { ProductDetailModal } from './ProductDetailModal';
+import { MyOrdersModal } from './MyOrdersModal';
+import { MyStoreModal } from './MyStoreModal';
 import { useAuth } from '../context/AuthContext';
+import { useCart } from '../context/CartContext';
+import { 
+  listProducts, 
+  isSupabaseConfigured, 
+  mapMarketplaceError 
+} from '../services/marketplace';
+
+const MARKET_CATEGORIES = [
+  'All',
+  'Food & Grills',
+  'Tech & Gadgets',
+  'Fashion & Thrift',
+  'Academics & Print',
+  'Beauty & Hair',
+  'Services & Repairs',
+];
 
 interface MarketplaceViewProps {
   businesses: StudentBusiness[];
@@ -42,6 +63,9 @@ interface MarketplaceViewProps {
   onOpenTraderProfile?: (business: StudentBusiness) => void;
   onClearTraderBusiness?: () => void;
   onUpdateBusiness?: (updated: StudentBusiness) => void;
+  isLoadingBusinesses?: boolean;
+  businessesError?: string | null;
+  onRetryBusinesses?: () => void;
 }
 
 export const MarketplaceView = ({
@@ -59,10 +83,88 @@ export const MarketplaceView = ({
   onOpenTraderProfile: externalOpenTraderProfile,
   onClearTraderBusiness,
   onUpdateBusiness,
+  isLoadingBusinesses = false,
+  businessesError = null,
+  onRetryBusinesses,
 }: MarketplaceViewProps) => {
   const { currentUser } = useAuth();
-  const [subTab, setSubTab] = useState<'stores' | 'hubs' | 'blueprints' | 'hostels' | 'vendor_hub'>('stores');
+  const { addToCart } = useCart();
+
+  // Navigation Subtabs
+  const [subTab, setSubTab] = useState<'catalog' | 'stores' | 'vendor_hub' | 'hostels' | 'hubs' | 'blueprints'>('catalog');
   const [localTraderProfile, setLocalTraderProfile] = useState<StudentBusiness | null>(null);
+
+  // Filter States for Product Catalog
+  const [selectedCategory, setSelectedCategory] = useState('All');
+  const [selectedKind, setSelectedKind] = useState<ProductKind | 'all'>('all');
+  const [debouncedSearch, setDebouncedSearch] = useState(searchQuery);
+
+  // Products Data State
+  const [products, setProducts] = useState<Product[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [isLoadingProducts, setIsLoadingProducts] = useState(false);
+  const [productError, setProductError] = useState<string | null>(null);
+
+  // Modals
+  const [selectedProductForModal, setSelectedProductForModal] = useState<Product | null>(null);
+  const [isMyOrdersOpen, setIsMyOrdersOpen] = useState(false);
+  const [selectedMyStore, setSelectedMyStore] = useState<StudentBusiness | null>(null);
+
+  // 300ms Debounce on Search Query
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+      setCurrentPage(1);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // Load Products from Supabase
+  const loadCatalogProducts = useCallback(async (page: number, append = false) => {
+    if (!isSupabaseConfigured) {
+      setProducts([]);
+      setTotalCount(0);
+      return;
+    }
+
+    try {
+      setIsLoadingProducts(true);
+      setProductError(null);
+
+      const result = await listProducts({
+        search: debouncedSearch,
+        category: selectedCategory,
+        kind: selectedKind,
+        page,
+        pageSize: 24,
+      });
+
+      if (append) {
+        setProducts((prev) => [...prev, ...result.products]);
+      } else {
+        setProducts(result.products);
+      }
+      setTotalCount(result.totalCount);
+    } catch (err: unknown) {
+      console.warn('[MarketplaceView] loadCatalogProducts error:', err);
+      setProductError(mapMarketplaceError(err));
+    } finally {
+      setIsLoadingProducts(false);
+    }
+  }, [debouncedSearch, selectedCategory, selectedKind]);
+
+  // Trigger catalog fetch when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+    loadCatalogProducts(1, false);
+  }, [loadCatalogProducts]);
+
+  const handleLoadMore = () => {
+    const nextPage = currentPage + 1;
+    setCurrentPage(nextPage);
+    loadCatalogProducts(nextPage, true);
+  };
 
   // If parent passes activeTraderBusiness, use it; otherwise use local selection
   const activeTraderProfile = activeTraderBusiness !== undefined ? (activeTraderBusiness || localTraderProfile) : localTraderProfile;
@@ -104,6 +206,60 @@ export const MarketplaceView = ({
   return (
     <div className="space-y-6">
       
+      {/* Product Detail Sheet */}
+      <ProductDetailModal
+        product={selectedProductForModal}
+        onClose={() => setSelectedProductForModal(null)}
+        onOpenTraderProfile={(businessId) => {
+          const found = businesses.find((b) => b.id === businessId);
+          if (found) {
+            handleOpenTrader(found);
+          }
+        }}
+        onRequireAuth={(action) => onOpenAuth(action as any, 'student')}
+      />
+
+      {/* Buyer My Orders Modal */}
+      <MyOrdersModal
+        isOpen={isMyOrdersOpen}
+        onClose={() => setIsMyOrdersOpen(false)}
+      />
+
+      {/* Trader My Store Product Management Modal */}
+      {selectedMyStore && (
+        <MyStoreModal
+          isOpen={Boolean(selectedMyStore)}
+          onClose={() => {
+            setSelectedMyStore(null);
+            loadCatalogProducts(currentPage, false);
+          }}
+          myStore={selectedMyStore}
+          onUpdateStore={(updated) => {
+            setSelectedMyStore(updated);
+            onUpdateBusiness?.(updated);
+          }}
+          onOpenStorePublicView={(store) => {
+            setSelectedMyStore(null);
+            handleOpenTrader(store);
+          }}
+        />
+      )}
+
+      {/* Backend not connected notice */}
+      {!isSupabaseConfigured && (
+        <div className="rounded-2xl border border-amber-500/40 bg-amber-500/10 p-4 text-amber-300 text-xs flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <AlertCircle className="h-5 w-5 shrink-0 text-amber-400" />
+            <div>
+              <strong className="block font-bold">Backend not connected</strong>
+              <p className="text-[11px] text-amber-300/80 mt-0.5">
+                Supabase environment keys are missing or invalid. Connect your Supabase project in .env to place real orders and list goods.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Marketplace Header Hero */}
       <HeroSection
         onSearch={onSearchChange}
@@ -138,21 +294,49 @@ export const MarketplaceView = ({
             </div>
           </div>
 
-          <motion.button
-            whileTap={{ scale: 0.95 }}
-            type="button"
-            onClick={onOpenBecomeTrader || onOpenCreateBusiness}
-            className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-neutral-950 font-bold px-5 py-2.5 text-xs transition-all shadow-lg shadow-amber-950/50 cursor-pointer shrink-0"
-          >
-            <span>Become a Trader</span>
-            <ArrowRight className="h-3.5 w-3.5" />
-          </motion.button>
+          <div className="flex items-center gap-2">
+            <motion.button
+              whileTap={{ scale: 0.95 }}
+              type="button"
+              onClick={() => setIsMyOrdersOpen(true)}
+              className="flex items-center gap-1.5 rounded-xl border border-neutral-700 bg-neutral-900 hover:bg-neutral-800 text-neutral-200 font-bold px-4 py-2.5 text-xs transition-colors cursor-pointer shrink-0"
+            >
+              <Package className="h-3.5 w-3.5 text-amber-400" />
+              <span>My Orders</span>
+            </motion.button>
+
+            <motion.button
+              whileTap={{ scale: 0.95 }}
+              type="button"
+              onClick={onOpenBecomeTrader || onOpenCreateBusiness}
+              className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-neutral-950 font-bold px-5 py-2.5 text-xs transition-all shadow-lg shadow-amber-950/50 cursor-pointer shrink-0"
+            >
+              <span>Become a Trader</span>
+              <ArrowRight className="h-3.5 w-3.5" />
+            </motion.button>
+          </div>
         </div>
       )}
 
       {/* Sub-Navigation Tabs inside Marketplace */}
       <div className="flex items-center justify-between border-b border-neutral-800 pb-3">
         <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
+          {/* TAB 1: PRODUCT CATALOG (PRIMARY) */}
+          <motion.button
+            whileTap={{ scale: 0.97 }}
+            type="button"
+            onClick={() => setSubTab('catalog')}
+            className={`flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-bold transition-all cursor-pointer shrink-0 ${
+              subTab === 'catalog'
+                ? 'bg-amber-500 text-neutral-950 shadow-md shadow-amber-950/40'
+                : 'bg-neutral-900 text-neutral-400 hover:text-neutral-200 border border-neutral-800'
+            }`}
+          >
+            <ShoppingBag className="h-3.5 w-3.5" />
+            <span>Products & Services ({totalCount})</span>
+          </motion.button>
+
+          {/* TAB 2: STORES DIRECTORY */}
           <motion.button
             whileTap={{ scale: 0.97 }}
             type="button"
@@ -167,6 +351,7 @@ export const MarketplaceView = ({
             <span>Campus Stores & Ventures ({businesses.length})</span>
           </motion.button>
 
+          {/* TAB 3: TRADER OPERATIONS HUB */}
           {isElevatedTrader && (
             <motion.button
               whileTap={{ scale: 0.97 }}
@@ -179,7 +364,7 @@ export const MarketplaceView = ({
               }`}
             >
               <Package className="h-3.5 w-3.5 text-emerald-400" />
-              <span>Vendor Dashboard ({myTrades.length})</span>
+              <span>Trader Dashboard ({myTrades.length})</span>
             </motion.button>
           )}
 
@@ -226,18 +411,207 @@ export const MarketplaceView = ({
           </motion.button>
         </div>
 
-        <motion.button
-          whileTap={{ scale: 0.95 }}
-          type="button"
-          onClick={isElevatedTrader ? onOpenCreateBusiness : (onOpenBecomeTrader || onOpenCreateBusiness)}
-          className="hidden sm:flex items-center gap-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 px-3.5 py-2 text-xs font-bold transition-colors cursor-pointer shrink-0 shadow-md"
-        >
-          <Plus className="h-3.5 w-3.5" />
-          <span>{isElevatedTrader ? '+ List New Trade' : 'Become Trader'}</span>
-        </motion.button>
+        {/* Action Controls */}
+        <div className="flex items-center gap-2">
+          {myTrades.length > 0 && (
+            <motion.button
+              whileTap={{ scale: 0.95 }}
+              type="button"
+              onClick={() => setSelectedMyStore(myTrades[0])}
+              className="flex items-center gap-1.5 rounded-xl border border-emerald-500/40 bg-emerald-950/40 hover:bg-emerald-900/50 text-emerald-300 px-3.5 py-2 text-xs font-bold transition-colors cursor-pointer shrink-0 shadow-md"
+            >
+              <Store className="h-3.5 w-3.5 text-emerald-400" />
+              <span>My Store</span>
+            </motion.button>
+          )}
+
+          <motion.button
+            whileTap={{ scale: 0.95 }}
+            type="button"
+            onClick={() => setIsMyOrdersOpen(true)}
+            className="flex items-center gap-1.5 rounded-xl border border-neutral-700 bg-neutral-900 hover:bg-neutral-800 text-neutral-200 px-3.5 py-2 text-xs font-bold transition-colors cursor-pointer shrink-0 shadow-md"
+          >
+            <Package className="h-3.5 w-3.5 text-amber-400" />
+            <span>My Orders</span>
+          </motion.button>
+
+          <motion.button
+            whileTap={{ scale: 0.95 }}
+            type="button"
+            onClick={isElevatedTrader ? onOpenCreateBusiness : (onOpenBecomeTrader || onOpenCreateBusiness)}
+            className="hidden sm:flex items-center gap-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 px-3.5 py-2 text-xs font-bold transition-colors cursor-pointer shrink-0 shadow-md"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            <span>{isElevatedTrader ? '+ List New Trade' : 'Become Trader'}</span>
+          </motion.button>
+        </div>
       </div>
 
-      {/* Render Subtabs */}
+      {/* ========================================================== */}
+      {/* SUBTAB 1: PRODUCT CATALOG (REAL SUPABASE PRODUCTS GRID)    */}
+      {/* ========================================================== */}
+      {subTab === 'catalog' && (
+        <div className="space-y-5">
+          {/* Filters Bar: Kind + Category Chips */}
+          <div className="space-y-3 p-4 rounded-3xl bg-neutral-900/60 border border-neutral-800/80 backdrop-blur-md">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              {/* Goods / Services Filter */}
+              <div className="flex items-center gap-1.5 bg-neutral-950 p-1 rounded-2xl border border-neutral-800">
+                <button
+                  type="button"
+                  onClick={() => setSelectedKind('all')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors ${
+                    selectedKind === 'all'
+                      ? 'bg-amber-500 text-neutral-950 shadow-sm'
+                      : 'text-neutral-400 hover:text-white'
+                  }`}
+                >
+                  All Items
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedKind('good')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors ${
+                    selectedKind === 'good'
+                      ? 'bg-amber-500 text-neutral-950 shadow-sm'
+                      : 'text-neutral-400 hover:text-white'
+                  }`}
+                >
+                  Goods Only
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedKind('service')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors ${
+                    selectedKind === 'service'
+                      ? 'bg-emerald-500 text-neutral-950 shadow-sm'
+                      : 'text-neutral-400 hover:text-white'
+                  }`}
+                >
+                  Services Only
+                </button>
+              </div>
+
+              {/* Total count badge */}
+              <div className="text-xs text-neutral-400 font-mono">
+                Showing {products.length} of {totalCount} items
+              </div>
+            </div>
+
+            {/* Category Chips */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+              {MARKET_CATEGORIES.map((cat) => (
+                <button
+                  key={cat}
+                  type="button"
+                  onClick={() => setSelectedCategory(cat)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-colors ${
+                    selectedCategory === cat
+                      ? 'bg-neutral-800 text-amber-400 border border-amber-500/40 shadow-sm'
+                      : 'bg-neutral-950 text-neutral-400 hover:text-white border border-neutral-800'
+                  }`}
+                >
+                  {cat}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Product Error Notice */}
+          {productError && (
+            <div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center justify-between">
+              <span>{productError}</span>
+              <button
+                type="button"
+                onClick={() => loadCatalogProducts(1, false)}
+                className="text-amber-400 underline font-bold"
+              >
+                Retry
+              </button>
+            </div>
+          )}
+
+          {/* Products Grid (24 per page) */}
+          {isLoadingProducts && products.length === 0 ? (
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+              {Array.from({ length: 8 }).map((_, idx) => (
+                <div key={idx} className="rounded-2xl bg-neutral-900 border border-neutral-800 aspect-3/4 animate-pulse" />
+              ))}
+            </div>
+          ) : products.length === 0 ? (
+            <div className="text-center py-20 px-4 bg-neutral-900/40 rounded-3xl border border-neutral-800 space-y-3">
+              <ShoppingBag className="w-12 h-12 text-neutral-600 mx-auto" />
+              <h4 className="text-base font-bold text-white">No products match your criteria</h4>
+              <p className="text-xs text-neutral-400 max-w-sm mx-auto">
+                {searchQuery
+                  ? `No items found matching "${searchQuery}". Try different keywords or reset filters.`
+                  : 'Be the first student trader to list goods in this category!'}
+              </p>
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => onSearchChange('')}
+                  className="px-4 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-xs font-bold"
+                >
+                  Clear Search
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-6">
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+                {products.map((product) => (
+                  <ProductCard
+                    key={product.id}
+                    product={product}
+                    onClick={() => setSelectedProductForModal(product)}
+                    onQuickAdd={(e) => {
+                      e.stopPropagation();
+                      const addAction = () => {
+                        addToCart({
+                          businessId: product.businessId,
+                          businessName: product.businessName || 'Campus Trader',
+                          businessImageUrl: product.businessImageUrl,
+                          businessWhatsapp: product.businessWhatsapp,
+                          traderHostel: product.businessHostel,
+                          serviceId: product.id,
+                          productId: product.id,
+                          name: product.title,
+                          price: product.price,
+                          quantity: 1,
+                        });
+                      };
+                      if (!currentUser) {
+                        onOpenAuth(addAction as any, 'student');
+                        return;
+                      }
+                      addAction();
+                    }}
+                  />
+                ))}
+              </div>
+
+              {/* Load More Button */}
+              {products.length < totalCount && (
+                <div className="text-center pt-4">
+                  <button
+                    type="button"
+                    onClick={handleLoadMore}
+                    disabled={isLoadingProducts}
+                    className="px-6 py-3 rounded-2xl bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 text-amber-400 text-xs font-bold transition-all shadow-md disabled:opacity-50"
+                  >
+                    {isLoadingProducts ? 'Loading more products...' : `Load More Products (${totalCount - products.length} remaining)`}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ========================================================== */}
+      {/* SUBTAB 2: STORES & VENTURES DIRECTORY                      */}
+      {/* ========================================================== */}
       {subTab === 'stores' && (
         <BusinessDirectory
           businesses={businesses}
@@ -248,165 +622,55 @@ export const MarketplaceView = ({
           onSelectBusiness={onSelectBusiness}
           onOpenCreateBusiness={onOpenCreateBusiness}
           onOpenTraderProfile={handleOpenTrader}
+          isLoading={isLoadingBusinesses}
+          error={businessesError}
+          onRetry={onRetryBusinesses}
+          onOpenBecomeTrader={onOpenBecomeTrader}
         />
       )}
 
-      {/* Elevated Vendor Operations Hub */}
+      {/* ========================================================== */}
+      {/* SUBTAB 3: TRADER OPERATIONS DASHBOARD (TRADER ONLY)        */}
+      {/* ========================================================== */}
       {subTab === 'vendor_hub' && (
-        <div className="space-y-6">
-          <div className="rounded-3xl border border-neutral-800 bg-neutral-900/70 p-6 space-y-4 backdrop-blur-md">
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-              <div>
-                <h3 className="text-base font-bold text-white flex items-center gap-2">
-                  <ShieldCheck className="h-5 w-5 text-emerald-400" />
-                  <span>UNILORIN Verified Vendor Operations Dashboard</span>
-                </h3>
-                <p className="text-xs text-neutral-400 mt-0.5">
-                  Manage your active trade listings, hostel orders, menu prices, and brand storefront
-                </p>
-              </div>
-
-              <div className="flex items-center gap-2">
-                {myTrades.length > 0 && (
-                  <motion.button
-                    whileTap={{ scale: 0.95 }}
-                    type="button"
-                    onClick={() => handleOpenTrader(myTrades[0])}
-                    className="flex items-center gap-1.5 rounded-xl border border-amber-500/50 bg-amber-500/15 hover:bg-amber-500 hover:text-neutral-950 text-amber-300 px-4 py-2 text-xs font-bold transition-all cursor-pointer shadow-md shadow-amber-950/30"
-                  >
-                    <Store className="h-3.5 w-3.5" />
-                    <span>View My Trader Portfolio</span>
-                  </motion.button>
-                )}
-                <motion.button
-                  whileTap={{ scale: 0.95 }}
-                  type="button"
-                  onClick={onOpenCreateBusiness}
-                  className="flex items-center gap-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 px-4 py-2 text-xs font-bold transition-colors cursor-pointer shadow-md shadow-amber-950/40"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                  <span>Add Product / Service</span>
-                </motion.button>
-              </div>
-            </div>
-
-            {myTrades.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-neutral-800 p-8 text-center space-y-3">
-                <Store className="h-10 w-10 text-neutral-600 mx-auto" />
-                <p className="text-xs text-neutral-400">
-                  You are registered as a Trader, but you haven't listed your first venture profile yet.
-                </p>
-                <motion.button
-                  whileTap={{ scale: 0.95 }}
-                  onClick={onOpenCreateBusiness}
-                  className="rounded-xl bg-amber-500 text-neutral-950 font-bold px-4 py-2 text-xs cursor-pointer shadow-md"
-                >
-                  Create Your Storefront Listing
-                </motion.button>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
-                {myTrades.map((biz) => (
-                  <div
-                    key={biz.id}
-                    className="rounded-2xl border border-neutral-800 bg-neutral-950 p-4 space-y-3 flex flex-col justify-between hover:border-neutral-700 transition-colors"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex items-center gap-3">
-                        <img
-                          src={biz.imageUrl}
-                          alt={biz.name}
-                          className="h-12 w-12 rounded-xl object-cover border border-neutral-800 shadow-md"
-                        />
-                        <div>
-                          <h4 className="text-sm font-bold text-white">{biz.name}</h4>
-                          <span className="text-[11px] text-amber-400 font-medium">{biz.category}</span>
-                        </div>
-                      </div>
-
-                      <span className="rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2 py-0.5 text-[10px] font-mono font-bold">
-                        Verified Live
-                      </span>
-                    </div>
-
-                    <p className="text-xs text-neutral-300 line-clamp-2">{biz.tagline}</p>
-
-                    <div className="grid grid-cols-2 gap-2 text-[11px] bg-neutral-900/60 p-2.5 rounded-xl border border-neutral-800/80">
-                      <div>
-                        <span className="text-neutral-500 block">Hostel Base:</span>
-                        <strong className="text-white">{biz.hostelLocation}</strong>
-                      </div>
-                      <div>
-                        <span className="text-neutral-500 block">Menu Items:</span>
-                        <strong className="text-emerald-400">{biz.services.length} items listed</strong>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center justify-between pt-2 border-t border-neutral-800">
-                      <span className="text-xs font-mono font-bold text-white">
-                        From ₦{biz.startingPrice.toLocaleString()}
-                      </span>
-
-                      <div className="flex items-center gap-2">
-                        <motion.button
-                          whileTap={{ scale: 0.95 }}
-                          type="button"
-                          onClick={() => handleOpenTrader(biz)}
-                          className="rounded-lg bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-neutral-950 px-3 py-1.5 text-xs font-bold transition-all cursor-pointer shadow-sm flex items-center gap-1.5"
-                          title="View your public trader profile & edit inventory"
-                        >
-                          <Store className="h-3.5 w-3.5" />
-                          <span>View Trader Portfolio</span>
-                        </motion.button>
-
-                        <motion.button
-                          whileTap={{ scale: 0.95 }}
-                          type="button"
-                          onClick={() => onSelectBusiness(biz)}
-                          className="rounded-lg bg-neutral-800 hover:bg-neutral-700 text-white px-3 py-1.5 text-xs font-bold transition-colors cursor-pointer"
-                        >
-                          Orders
-                        </motion.button>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
+        <TraderDashboard
+          myBusinesses={myTrades}
+          onClose={() => setSubTab('catalog')}
+        />
       )}
 
+      {/* SUBTAB 4: HOSTELS & FACULTIES DRILL-DOWN */}
       {subTab === 'hostels' && (
         <CampusDirectoryView
           onSelectHostelFilter={(hostelName) => {
             onSearchChange(hostelName);
-            setSubTab('stores');
+            setSubTab('catalog');
           }}
-          onSelectDepartmentFilter={(dept, faculty) => {
+          onSelectDepartmentFilter={(dept) => {
             onSearchChange(dept);
-            setSubTab('stores');
+            setSubTab('catalog');
           }}
           onOpenCreateBusiness={onOpenCreateBusiness}
         />
       )}
 
+      {/* SUBTAB 5: CAMPUS HUBS */}
       {subTab === 'hubs' && (
         <CampusHubsView
-          onSelectHubZone={(zoneName) => {
-            onSelectCampus(zoneName);
-            setSubTab('stores');
+          onSelectHubZone={(zone) => {
+            onSearchChange(zone);
+            setSubTab('catalog');
           }}
           onOpenCreateBusiness={onOpenCreateBusiness}
         />
       )}
 
+      {/* SUBTAB 6: STARTER BLUEPRINTS */}
       {subTab === 'blueprints' && (
         <TraderBlueprintsView
-          onApplyBlueprint={onApplyBlueprint || onOpenCreateBusiness}
+          onApplyBlueprint={(bp) => onApplyBlueprint?.(bp)}
         />
       )}
-
     </div>
   );
 };

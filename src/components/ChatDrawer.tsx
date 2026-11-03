@@ -21,6 +21,7 @@ import {
   LayoutGrid,
   Trash2,
   Mic,
+  MicOff,
   Paperclip,
   Smile,
   Play,
@@ -31,11 +32,15 @@ import {
   Palette,
   Eye,
   Lock,
-  Volume2
+  Volume2,
+  RefreshCw,
+  AlertCircle
 } from 'lucide-react';
 import { useChat, SendMessageOptions } from '../context/ChatContext';
+import { useMarketplaceChat } from '../context/MarketplaceChatContext';
 import { useAuth } from '../context/AuthContext';
-import { ChatMessage, ChatThemeMode } from '../types';
+import { ChatThemeMode } from '../types';
+import { uploadVoiceNoteAudio, getPlayableAudioUrl, emitAppToast } from '../services/supabase';
 
 export type ChatScreenRatio = 'standard' | 'wide' | 'compact';
 
@@ -65,10 +70,11 @@ export const ChatDrawer = () => {
     clearAllChats
   } = useChat();
 
+  const { conversations: marketplaceConversations, openMarketplaceChat } = useMarketplaceChat();
   const { currentUser } = useAuth();
   
-  // Navigation tabs: 'primary' vs 'requests'
-  const [activeTab, setActiveTab] = useState<'primary' | 'requests'>('primary');
+  // Navigation tabs: 'primary' vs 'requests' vs 'marketplace'
+  const [activeTab, setActiveTab] = useState<'primary' | 'requests' | 'marketplace'>('primary');
   
   // Input & Reply state
   const [inputText, setInputText] = useState('');
@@ -76,8 +82,16 @@ export const ChatDrawer = () => {
   
   // Voice note recording state
   const [isRecordingVoice, setIsRecordingVoice] = useState(false);
+  const [isUploadingVoice, setIsUploadingVoice] = useState(false);
+  const [micPermissionDenied, setMicPermissionDenied] = useState(false);
+  const [micErrorMessage, setMicErrorMessage] = useState<string | null>(null);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Real Audio Recording Refs
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
 
   // Voice note playback speeds per message: id -> speed (1, 1.5, 2)
   const [voicePlaybackSpeeds, setVoicePlaybackSpeeds] = useState<Record<string, number>>({});
@@ -117,6 +131,32 @@ export const ChatDrawer = () => {
     };
   }, [isRecordingVoice]);
 
+  // In-drawer toast notification state
+  const [chatToast, setChatToast] = useState<{ message: string; type: 'error' | 'success' } | null>(null);
+  const toastTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const showToast = (message: string, type: 'error' | 'success' = 'error') => {
+    setChatToast({ message, type });
+    if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+    toastTimeoutRef.current = setTimeout(() => {
+      setChatToast(null);
+    }, 5000);
+  };
+
+  useEffect(() => {
+    const handleGlobalToast = (e: Event) => {
+      const detail = (e as CustomEvent)?.detail;
+      if (detail?.message) {
+        showToast(detail.message, detail.type || 'error');
+      }
+    };
+    window.addEventListener('campus-toast', handleGlobalToast);
+    return () => {
+      window.removeEventListener('campus-toast', handleGlobalToast);
+      if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+    };
+  }, []);
+
   if (!isChatDrawerOpen) return null;
 
   const handleSend = async (e: FormEvent) => {
@@ -132,7 +172,12 @@ export const ChatDrawer = () => {
       setReplyingTo(null);
     }
 
-    await sendMessage(textToSend, options);
+    try {
+      await sendMessage(textToSend, options);
+    } catch (err: any) {
+      console.error('[Send Message Error]:', err?.message || err);
+      showToast(`Failed to send message: ${err?.message || 'Database error'}`);
+    }
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -140,31 +185,159 @@ export const ChatDrawer = () => {
     sendTyping(e.target.value.length > 0);
   };
 
-  const handleStartVoiceRecording = () => {
-    setIsRecordingVoice(true);
+  const handleStartVoiceRecording = async () => {
+    try {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        const msg = 'Microphone recording is not supported in this browser environment.';
+        showToast(msg);
+        setMicPermissionDenied(true);
+        return;
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaStreamRef.current = stream;
+      audioChunksRef.current = [];
+
+      // Pick recorder format with MediaRecorder.isTypeSupported (audio/webm first, then audio/mp4 for Safari)
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm')
+        ? 'audio/webm'
+        : MediaRecorder.isTypeSupported('audio/mp4')
+        ? 'audio/mp4'
+        : '';
+
+      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+      mediaRecorderRef.current = recorder;
+
+      recorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      recorder.start(200);
+      setMicPermissionDenied(false);
+      setMicErrorMessage(null);
+      setIsRecordingVoice(true);
+    } catch (err: any) {
+      const isPermissionDenied =
+        err?.name === 'NotAllowedError' ||
+        err?.name === 'PermissionDeniedError' ||
+        err?.name === 'SecurityError';
+
+      const isNotFound =
+        err?.name === 'NotFoundError' ||
+        err?.name === 'DevicesNotFoundError';
+
+      let msg = '';
+      if (isPermissionDenied) {
+        msg = 'Microphone access was blocked or denied (NotAllowedError). Please allow microphone permissions in your browser or preview frame settings.';
+        console.warn('[Microphone Access Error]: Microphone permission was denied by browser or user.', {
+          name: err?.name,
+          message: err?.message,
+          statusCode: 403,
+        });
+      } else if (isNotFound) {
+        msg = 'No microphone device was found (NotFoundError). Please connect a microphone to record voice notes.';
+        console.warn('[Microphone Access Error]: No microphone device found.', {
+          name: err?.name,
+          message: err?.message,
+          statusCode: 404,
+        });
+      } else {
+        msg = `Could not access microphone (${err?.name || 'Error'}): ${err?.message || 'Device inaccessible'}`;
+        console.warn('[Microphone Access Error]:', {
+          name: err?.name,
+          message: err?.message,
+          statusCode: err?.statusCode || 500,
+        });
+      }
+
+      showToast(msg);
+      setMicErrorMessage(msg);
+      setMicPermissionDenied(true);
+    }
   };
 
   const handleCancelVoiceRecording = () => {
+    try {
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        mediaRecorderRef.current.stop();
+      }
+      mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
+      mediaStreamRef.current = null;
+      audioChunksRef.current = [];
+    } catch {
+      // safe cleanup
+    }
+    setMicPermissionDenied(false);
     setIsRecordingVoice(false);
     setRecordingSeconds(0);
   };
 
   const handleSendVoiceRecording = async () => {
-    setIsRecordingVoice(false);
+    setIsUploadingVoice(true);
     const duration = Math.max(1, recordingSeconds);
-    setRecordingSeconds(0);
+    const userId = currentUser?.id || 'usr_me';
 
-    // Simulated campus voice note waveform
-    const sampleWaveform = [30, 45, 80, 95, 60, 40, 75, 90, 85, 50, 70, 35, 90, 65];
-    await sendMessage('', {
-      voiceNote: {
-        url: 'https://actions.google.com/sounds/v1/water/air_woosh_underwater.ogg',
-        duration,
-        waveform: sampleWaveform,
-      },
-      replyTo: replyingTo || undefined,
-    });
-    setReplyingTo(null);
+    let voiceNotePath = '';
+
+    try {
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        await new Promise<void>((resolve) => {
+          if (!mediaRecorderRef.current) return resolve();
+          mediaRecorderRef.current.onstop = () => resolve();
+          mediaRecorderRef.current.stop();
+        });
+      }
+
+      mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
+      mediaStreamRef.current = null;
+
+      if (audioChunksRef.current.length > 0) {
+        const rawMime = audioChunksRef.current[0].type || 'audio/webm';
+        const cleanMime = rawMime.split(';')[0].trim();
+        const audioBlob = new Blob(audioChunksRef.current, { type: cleanMime });
+        audioChunksRef.current = [];
+
+        // Uploads the audio to Supabase Storage at `${currentUser.id}/${uuid}.${ext}` in the audio bucket
+        voiceNotePath = await uploadVoiceNoteAudio(audioBlob, userId);
+      } else {
+        const errorMsg = 'No audio recorded. Please hold the mic to record audio before sending.';
+        console.error('[Voice Note Recording Error]: Empty audio chunk buffer');
+        showToast(errorMsg);
+        setIsUploadingVoice(false);
+        setIsRecordingVoice(false);
+        setRecordingSeconds(0);
+        return;
+      }
+
+      // Dynamic campus waveform
+      const sampleWaveform = Array.from({ length: 14 }, () => Math.floor(Math.random() * 65 + 30));
+
+      // 2. Inserts a chat_messages row with sender_id, recipient_id, conversation_id, voice_note_url, voice_duration and voice_waveform
+      await sendMessage('', {
+        voiceNote: {
+          url: voiceNotePath,
+          duration,
+          waveform: sampleWaveform,
+        },
+        replyTo: replyingTo || undefined,
+      });
+    } catch (err: any) {
+      console.error('[Send Voice Note Error]:', {
+        message: err?.message,
+        code: (err as any)?.code || (err as any)?.statusCode,
+        details: err?.details || err?.message,
+        raw: err,
+      });
+      showToast(err?.message ? `Failed to send voice note: ${err.message}` : 'Failed to send voice note. Please try again.');
+    } finally {
+      setIsUploadingVoice(false);
+      setIsRecordingVoice(false);
+      setMicPermissionDenied(false);
+      setRecordingSeconds(0);
+      setReplyingTo(null);
+    }
   };
 
   const handleToggleVoicePlay = (msgId: string, url: string) => {
@@ -175,11 +348,26 @@ export const ChatDrawer = () => {
       if (audioPlayerRef.current) {
         audioPlayerRef.current.pause();
       }
-      const audio = new Audio(url);
+      // 3. loads and plays voice notes from those columns in the chat view
+      const playableSrc = getPlayableAudioUrl(url);
+      const audio = new Audio(playableSrc);
       const currentSpeed = voicePlaybackSpeeds[msgId] || 1;
       audio.playbackRate = currentSpeed;
       audio.onended = () => setPlayingVoiceId(null);
-      audio.play().catch(() => {});
+      audio.onerror = (e) => {
+        console.error('[Audio Playback Error]: Failed to stream audio from source:', {
+          source: playableSrc,
+          originalUrl: url,
+          error: e,
+        });
+        showToast(`Could not play voice note: failed to stream from storage (${url})`);
+        setPlayingVoiceId(null);
+      };
+      audio.play().catch((playErr) => {
+        console.error('[Audio Playback Error]:', playErr?.message || playErr);
+        showToast(`Audio playback error: ${playErr?.message || 'Playback failed'}`);
+        setPlayingVoiceId(null);
+      });
       audioPlayerRef.current = audio;
       setPlayingVoiceId(msgId);
     }
@@ -248,9 +436,30 @@ export const ChatDrawer = () => {
       onClick={closeChatDrawer}
     >
       <div 
-        className={`w-full h-full ${ratioClasses[screenRatio]} rounded-none sm:rounded-3xl border border-neutral-800 bg-neutral-900/95 shadow-2xl flex flex-col overflow-hidden text-neutral-100 transition-all duration-300`}
+        className={`w-full h-full ${ratioClasses[screenRatio]} rounded-none sm:rounded-3xl border border-neutral-800 bg-neutral-900/95 shadow-2xl flex flex-col overflow-hidden text-neutral-100 transition-all duration-300 relative`}
         onClick={(e) => e.stopPropagation()}
       >
+        {/* Error / Alert Toast Notification */}
+        {chatToast && (
+          <div className={`absolute top-16 left-4 right-4 z-50 flex items-center justify-between gap-3 p-3.5 rounded-2xl border shadow-2xl backdrop-blur-md animate-in slide-in-from-top-3 ${
+            chatToast.type === 'success'
+              ? 'bg-emerald-600/95 border-emerald-400 text-white'
+              : 'bg-rose-600/95 border-rose-400 text-white'
+          }`}>
+            <div className="flex items-center gap-2.5 min-w-0">
+              <AlertCircle className="h-4 w-4 shrink-0 text-white" />
+              <span className="text-xs font-semibold truncate">{chatToast.message}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setChatToast(null)}
+              className="p-1 rounded-lg hover:bg-white/20 text-white shrink-0 cursor-pointer"
+              title="Dismiss"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        )}
         
         {/* ======================================================== */}
         {/* TOP ENTERPRISE HEADER BAR (WhatsApp / Instagram Hybrid) */}
@@ -301,16 +510,8 @@ export const ChatDrawer = () => {
                   <div className="flex items-center gap-2 text-[11px] text-neutral-400">
                     <span className="truncate">{activeConversation.traderName}</span>
                     <span>•</span>
-                    <span className="text-emerald-400 font-medium">
-                      {typingUser === activeConversation.id ? (
-                        <span className="animate-pulse flex items-center gap-1 text-emerald-400 font-bold">
-                          typing...
-                        </span>
-                      ) : activeConversation.isOnline && onlinePrivacy !== 'nobody' ? (
-                        'Online'
-                      ) : (
-                        activeConversation.lastSeen || 'Offline'
-                      )}
+                    <span className="text-amber-400/90 font-medium">
+                      {activeConversation.traderHostel || 'Campus Student'}
                     </span>
                   </div>
                 </div>
@@ -451,12 +652,12 @@ export const ChatDrawer = () => {
           {/* ------------------------------------------------------ */}
           <div className={`${activeConversation ? 'hidden sm:flex' : 'flex'} w-full sm:w-80 md:w-96 flex-col border-r border-neutral-800 bg-neutral-950/70 shrink-0`}>
             
-            {/* X/Twitter Tab Switcher: Primary vs Requests */}
-            <div className="p-3 border-b border-neutral-800 bg-neutral-950 flex items-center gap-2">
+            {/* X/Twitter Tab Switcher: Primary vs Requests vs Marketplace */}
+            <div className="p-3 border-b border-neutral-800 bg-neutral-950 flex items-center gap-1.5">
               <button
                 type="button"
                 onClick={() => setActiveTab('primary')}
-                className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                className={`flex-1 py-2 px-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1 ${
                   activeTab === 'primary'
                     ? 'bg-amber-500 text-neutral-950 shadow-md'
                     : 'text-neutral-400 hover:text-white hover:bg-neutral-850'
@@ -473,7 +674,7 @@ export const ChatDrawer = () => {
               <button
                 type="button"
                 onClick={() => setActiveTab('requests')}
-                className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                className={`flex-1 py-2 px-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1 ${
                   activeTab === 'requests'
                     ? 'bg-amber-500 text-neutral-950 shadow-md'
                     : 'text-neutral-400 hover:text-white hover:bg-neutral-850'
@@ -487,6 +688,26 @@ export const ChatDrawer = () => {
                 ) : (
                   <span className="px-1.5 py-0.2 rounded-full text-[10px] font-mono bg-neutral-800 text-neutral-400">
                     0
+                  </span>
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab('marketplace')}
+                className={`flex-1 py-2 px-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1 ${
+                  activeTab === 'marketplace'
+                    ? 'bg-amber-500 text-neutral-950 shadow-md'
+                    : 'text-neutral-400 hover:text-white hover:bg-neutral-850'
+                }`}
+              >
+                <Store className="w-3.5 h-3.5" />
+                <span>Marketplace</span>
+                {marketplaceConversations.length > 0 && (
+                  <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
+                    activeTab === 'marketplace' ? 'bg-neutral-950/20 text-neutral-950 font-bold' : 'bg-neutral-800 text-neutral-400'
+                  }`}>
+                    {marketplaceConversations.length}
                   </span>
                 )}
               </button>
@@ -549,7 +770,7 @@ export const ChatDrawer = () => {
                     );
                   })
                 )
-              ) : (
+              ) : activeTab === 'requests' ? (
                 /* REQUESTS TAB (X / Twitter Inbound Requests) */
                 requestConversations.length === 0 ? (
                   <div className="p-8 text-center text-neutral-500 text-xs">
@@ -586,6 +807,66 @@ export const ChatDrawer = () => {
                             </p>
                           </div>
                         </div>
+                      </div>
+                    );
+                  })
+                )
+              ) : (
+                /* MARKETPLACE TAB (marketplace_conversations) */
+                marketplaceConversations.length === 0 ? (
+                  <div className="p-8 text-center text-neutral-500 text-xs space-y-2">
+                    <Store className="h-8 w-8 mx-auto text-amber-400" />
+                    <p className="font-bold text-neutral-300">No marketplace chats yet</p>
+                    <p className="text-[11px] text-neutral-400">
+                      When you tap "Message trader" on any product or store, your trade inquiries will appear here.
+                    </p>
+                  </div>
+                ) : (
+                  marketplaceConversations.map((conv) => {
+                    const isTrader = currentUser && currentUser.id === conv.traderId;
+                    const unread = isTrader ? conv.traderUnread : conv.buyerUnread;
+                    const displayName = isTrader
+                      ? (conv.buyerName || conv.businessName || 'Student Buyer')
+                      : (conv.businessName || 'Campus Store');
+
+                    return (
+                      <div
+                        key={conv.id}
+                        onClick={() => openMarketplaceChat(conv.id)}
+                        className="p-3.5 rounded-2xl cursor-pointer transition-all border bg-neutral-900/80 hover:bg-neutral-800 border-neutral-800 flex items-center justify-between gap-3"
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="w-10 h-10 rounded-xl bg-neutral-800 border border-neutral-700 overflow-hidden shrink-0 flex items-center justify-center">
+                            {conv.businessImageUrl ? (
+                              <img src={conv.businessImageUrl} alt="" className="w-full h-full object-cover" />
+                            ) : (
+                              <Store className="w-5 h-5 text-amber-400" />
+                            )}
+                          </div>
+
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center justify-between gap-1">
+                              <h4 className="text-xs font-bold text-white truncate">{displayName}</h4>
+                              <span className={`text-[9px] font-mono px-1.5 py-0.2 rounded uppercase ${
+                                conv.status === 'accepted' ? 'bg-emerald-500/20 text-emerald-400' :
+                                conv.status === 'declined' ? 'bg-amber-500/20 text-amber-400' :
+                                'bg-rose-500/20 text-rose-400'
+                              }`}>
+                                {conv.status}
+                              </span>
+                            </div>
+
+                            <p className="text-[11px] text-neutral-400 truncate mt-0.5">
+                              {conv.lastMessage || 'No messages yet'}
+                            </p>
+                          </div>
+                        </div>
+
+                        {unread > 0 && (
+                          <span className="px-2 py-0.5 rounded-full bg-amber-500 text-neutral-950 text-[10px] font-extrabold shrink-0">
+                            {unread}
+                          </span>
+                        )}
                       </div>
                     );
                   })
@@ -763,11 +1044,9 @@ export const ChatDrawer = () => {
                           <div className={`flex items-center justify-end gap-1 mt-1 text-[10px] ${isMe ? 'text-neutral-900/70' : 'text-neutral-400'}`}>
                             <span>{formatMessageTime(msg.timestamp)}</span>
                             {isMe && (
-                              <span title={`State: ${msg.deliveryState || 'sent'}`}>
-                                {msg.deliveryState === 'read' ? (
+                              <span title={msg.isRead || msg.deliveryState === 'read' ? 'Read' : 'Sent'}>
+                                {msg.isRead || msg.deliveryState === 'read' ? (
                                   <CheckCheck className="h-3.5 w-3.5 text-sky-700 font-extrabold" />
-                                ) : msg.deliveryState === 'delivered' ? (
-                                  <CheckCheck className="h-3.5 w-3.5 text-neutral-800" />
                                 ) : (
                                   <Check className="h-3.5 w-3.5 text-neutral-800" />
                                 )}
@@ -844,28 +1123,75 @@ export const ChatDrawer = () => {
                 {/* BOTTOM COMPOSER INPUT BAR (WhatsApp / Instagram Model) */}
                 {/* ==================================================== */}
                 <div className="p-3 border-t border-neutral-800 bg-neutral-950/90 backdrop-blur-md">
+                  {/* Clear Microphone Permission Denied Notice */}
+                  {micPermissionDenied && (
+                    <div className="mb-2.5 p-3 rounded-2xl bg-amber-500/15 border border-amber-500/40 text-amber-200 text-xs flex items-start justify-between gap-3 animate-in fade-in slide-in-from-bottom-2">
+                      <div className="flex items-start gap-2.5 min-w-0">
+                        <MicOff className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
+                        <div className="min-w-0">
+                          <p className="font-semibold text-amber-300">Microphone Access Issue</p>
+                          <p className="text-[11px] text-neutral-300 mt-0.5 leading-relaxed">
+                            {micErrorMessage || 'The preview environment or browser blocked microphone access. Please allow microphone permissions in your browser address bar or preview frame settings to record and send voice notes.'}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={handleStartVoiceRecording}
+                          className="px-2.5 py-1 rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 font-bold text-[11px] transition-colors cursor-pointer"
+                        >
+                          Try Again
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setMicPermissionDenied(false)}
+                          className="p-1 rounded-lg hover:bg-white/10 text-neutral-400 hover:text-white cursor-pointer"
+                          title="Dismiss notice"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
                   {isRecordingVoice ? (
                     /* Active Voice Note Recording Mode */
                     <div className="flex items-center justify-between gap-3 p-2 bg-neutral-900 rounded-2xl border border-rose-500/40 animate-pulse">
-                      <div className="flex items-center gap-2 text-rose-400">
-                        <Mic className="h-5 w-5 animate-bounce" />
-                        <span className="text-xs font-mono font-bold">Recording... {recordingSeconds}s</span>
+                      <div className="flex items-center gap-2">
+                        <Mic className="h-5 w-5 text-rose-400 animate-bounce" />
+                        <div className="flex flex-col">
+                          <span className="text-xs font-mono font-bold text-rose-400">
+                            Recording... {recordingSeconds}s
+                          </span>
+                          <span className="text-[10px] text-neutral-400">Capturing audio</span>
+                        </div>
                       </div>
                       <div className="flex items-center gap-2">
                         <button
                           type="button"
                           onClick={handleCancelVoiceRecording}
-                          className="px-3 py-1.5 rounded-xl bg-neutral-800 text-neutral-300 text-xs font-bold hover:bg-neutral-700"
+                          className="px-3 py-1.5 rounded-xl bg-neutral-800 text-neutral-300 text-xs font-bold hover:bg-neutral-700 cursor-pointer"
                         >
                           Cancel
                         </button>
                         <button
                           type="button"
+                          disabled={isUploadingVoice}
                           onClick={handleSendVoiceRecording}
-                          className="px-4 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 text-xs font-bold flex items-center gap-1 shadow-md"
+                          className="px-4 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 text-xs font-bold flex items-center gap-1.5 shadow-md disabled:opacity-60 cursor-pointer"
                         >
-                          <Send className="h-3.5 w-3.5" />
-                          <span>Send Audio</span>
+                          {isUploadingVoice ? (
+                            <>
+                              <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                              <span>Uploading...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Send className="h-3.5 w-3.5" />
+                              <span>Send Audio</span>
+                            </>
+                          )}
                         </button>
                       </div>
                     </div>
@@ -906,10 +1232,14 @@ export const ChatDrawer = () => {
                           type="button"
                           onClick={handleStartVoiceRecording}
                           disabled={isCurrentConvARequest}
-                          className="p-2.5 rounded-2xl bg-neutral-900 border border-neutral-800 text-amber-400 hover:bg-amber-500 hover:text-neutral-950 transition-all cursor-pointer disabled:opacity-50"
-                          title="Record Voice Note"
+                          className={`p-2.5 rounded-2xl border transition-all cursor-pointer disabled:opacity-50 ${
+                            micPermissionDenied
+                              ? 'bg-amber-500/20 border-amber-500/50 text-amber-400 hover:bg-amber-500/30'
+                              : 'bg-neutral-900 border-neutral-800 text-amber-400 hover:bg-amber-500 hover:text-neutral-950'
+                          }`}
+                          title={micPermissionDenied ? 'Microphone permission blocked - click to retry' : 'Record Voice Note'}
                         >
-                          <Mic className="h-4 w-4" />
+                          {micPermissionDenied ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
                         </button>
                       )}
                     </form>

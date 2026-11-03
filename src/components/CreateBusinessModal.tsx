@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { 
   X, 
   Plus, 
@@ -17,6 +18,8 @@ import {
 import { StudentBusiness, StudentServiceItem } from '../types';
 import { CATEGORIES, CAMPUS_ZONES, ALL_UNILORIN_HOSTELS } from '../data/mockData';
 import { useAuth } from '../context/AuthContext';
+import { supabase, isSupabaseConfigured } from '../services/supabase';
+import { mapMarketplaceError } from '../services/marketplace';
 import { HostelSelectMenu } from './HostelSelectMenu';
 import { FacultyDepartmentSelector } from './FacultyDepartmentSelector';
 
@@ -62,6 +65,11 @@ export const CreateBusinessModal = ({
   const [services, setServices] = useState<Array<{ name: string; price: string; description: string }>>([
     { name: 'Standard Item / Service', price: '1500', description: 'Freshly prepared or delivered on demand.' },
   ]);
+
+  // Submission & Validation States
+  const [descriptionError, setDescriptionError] = useState('');
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Load draft on mount / open
   useEffect(() => {
@@ -148,17 +156,29 @@ export const CreateBusinessModal = ({
     setHasDraft(false);
   };
 
+  // Prevent background scrolling while open
+  useEffect(() => {
+    if (isOpen) {
+      const originalOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = originalOverflow;
+      };
+    }
+  }, [isOpen]);
+
   if (!isOpen) return null;
+  if (typeof document === 'undefined') return null;
 
   // Authentication Gate: Prevent creating a business without being signed in
   if (!currentUser) {
-    return (
+    return createPortal(
       <div 
-        className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md"
+        className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/85 backdrop-blur-md animate-in fade-in"
         onClick={onClose}
       >
         <div 
-          className="relative flex flex-col w-full max-w-md overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-900 p-6 sm:p-8 text-center shadow-2xl animate-in zoom-in-95 duration-150"
+          className="relative flex flex-col w-full sm:max-w-md overflow-hidden rounded-t-3xl sm:rounded-3xl border border-neutral-800 bg-neutral-900 p-6 sm:p-8 text-center shadow-2xl animate-in zoom-in-95 duration-150 pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))]"
           onClick={(e) => e.stopPropagation()}
         >
           <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-500/10 text-amber-400 border border-amber-500/20 mb-4">
@@ -191,7 +211,8 @@ export const CreateBusinessModal = ({
             </button>
           </div>
         </div>
-      </div>
+      </div>,
+      document.body
     );
   }
 
@@ -210,92 +231,195 @@ export const CreateBusinessModal = ({
     setServices(updated);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!name.trim()) return;
+    // LAUNCH POLISH: Prevent double submission while request is processing
+    if (isSubmitting) return;
 
-    // Default image based on category if not provided
-    const resolvedImage = imageUrl.trim() || (
-      category.includes('Food') 
-        ? 'https://images.unsplash.com/photo-1509440159596-0249088772ff?auto=format&fit=crop&w=800&q=80'
-        : category.includes('Gadget')
-        ? 'https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=800&q=80'
-        : category.includes('Fashion')
-        ? 'https://images.unsplash.com/photo-1523381294911-8d3cead13475?auto=format&fit=crop&w=800&q=80'
-        : category.includes('Hair') || category.includes('Barbing')
-        ? 'https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=800&q=80'
-        : 'https://images.unsplash.com/photo-1617347454431-f49d7ff5c3b1?auto=format&fit=crop&w=800&q=80'
-    );
+    const cleanName = name.trim().replace(/[\x00-\x1F\x7F]/g, '');
+    if (!cleanName) return;
 
-    const formattedServices: StudentServiceItem[] = services
-      .filter((s) => s.name.trim() !== '')
-      .map((s, idx) => ({
-        id: `srv_${Date.now()}_${idx}`,
-        name: s.name.trim(),
-        price: Number(s.price) || 1000,
-        description: s.description.trim(),
-      }));
+    if (description.trim().length < 20) {
+      setDescriptionError('Description must be at least 20 characters long.');
+      return;
+    }
+    setDescriptionError('');
+    setSubmitError(null);
 
-    const minPrice = formattedServices.length > 0 
-      ? Math.min(...formattedServices.map((s) => s.price)) 
-      : 1000;
-
-    const resolvedHostelLocation = `${selectedHostel}${roomNumber.trim() ? `, ${roomNumber.trim()}` : ''}`;
-
-    const newBusiness: StudentBusiness = {
-      id: `biz_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-      name: name.trim(),
-      tagline: tagline.trim() || 'Verified student venture on UNILORIN Campus Foundry.',
-      description: description.trim() || `${name} provides trusted campus services direct to hostel students.`,
-      category,
-      university: 'University of Ilorin (UNILORIN)',
-      campus,
-      hostelLocation: resolvedHostelLocation,
-      ownerId: currentUser.id,
-      ownerName: currentUser.fullName || ownerName.trim() || 'Student Founder',
-      ownerEmail: currentUser.email.toLowerCase().trim(),
-      studentFaculty: studentFaculty,
-      studentDept: studentDept.trim(),
-      studentLevel: studentLevel.trim(),
-      whatsapp: whatsapp.replace(/[^0-9]/g, '') || '2348039281744',
-      rating: 5.0,
-      reviewsCount: 1,
-      acceptsHostelDelivery,
-      deliveryTimeEstimate: acceptsHostelDelivery ? deliveryTimeEstimate : undefined,
-      startingPrice: minPrice,
-      services: formattedServices,
-      imageUrl: resolvedImage,
-      badge: 'New Student Venture',
-      verifiedStudent: true,
-      activeOrdersToday: 0,
-    };
-
-    // Promote user role to trader if previously student
-    if (currentUser.role !== 'trader') {
-      updateUser({ role: 'trader' });
+    // Ensure signed-in user
+    if (!currentUser) {
+      setSubmitError('You must be signed in to open a campus store.');
+      return;
     }
 
-    // Clear saved draft upon successful listing creation
-    try {
-      localStorage.removeItem(DRAFT_STORAGE_KEY);
-    } catch {}
+    setIsSubmitting(true);
 
-    onBusinessCreated(newBusiness);
-    onClose();
+    try {
+      // 1. Block duplicate store creation per user
+      if (isSupabaseConfigured) {
+        const { data: existingBiz, error: checkError } = await supabase
+          .from('student_businesses')
+          .select('id, name')
+          .eq('owner_id', currentUser.id)
+          .maybeSingle();
+
+        if (checkError && checkError.code !== 'PGRST116') {
+          console.warn('[CreateBusinessModal] Duplicate check warning:', checkError);
+        }
+
+        if (existingBiz) {
+          setSubmitError(`You already own a registered store ("${existingBiz.name}"). Each student can manage one campus store.`);
+          setIsSubmitting(false);
+          return;
+        }
+      }
+
+      // Default image based on category if not provided
+      const resolvedImage = imageUrl.trim() || (
+        category.includes('Food') 
+          ? 'https://images.unsplash.com/photo-1509440159596-0249088772ff?auto=format&fit=crop&w=800&q=80'
+          : category.includes('Gadget')
+          ? 'https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=800&q=80'
+          : category.includes('Fashion')
+          ? 'https://images.unsplash.com/photo-1523381294911-8d3cead13475?auto=format&fit=crop&w=800&q=80'
+          : category.includes('Hair') || category.includes('Barbing')
+          ? 'https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=800&q=80'
+          : 'https://images.unsplash.com/photo-1617347454431-f49d7ff5c3b1?auto=format&fit=crop&w=800&q=80'
+      );
+
+      const formattedServices: StudentServiceItem[] = services
+        .filter((s) => s.name.trim() !== '')
+        .map((s, idx) => ({
+          id: `srv_${Date.now()}_${idx}`,
+          name: s.name.trim(),
+          price: Number(s.price) || 1000,
+          description: s.description.trim(),
+        }));
+
+      const minPrice = formattedServices.length > 0 
+        ? Math.min(...formattedServices.map((s) => s.price)) 
+        : 1000;
+
+      const resolvedHostelLocation = `${selectedHostel}${roomNumber.trim() ? `, ${roomNumber.trim()}` : ''}`;
+
+      let createdId = `biz_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+
+      // 2. Insert row directly into student_businesses table
+      if (isSupabaseConfigured) {
+        const { data: inserted, error: insertError } = await supabase
+          .from('student_businesses')
+          .insert({
+            name: name.trim(),
+            tagline: tagline.trim() || 'Verified student venture on UNILORIN Campus Foundry.',
+            description: description.trim() || `${name} provides trusted campus services direct to hostel students.`,
+            category,
+            university: 'University of Ilorin (UNILORIN)',
+            campus,
+            hostel_location: resolvedHostelLocation,
+            owner_id: currentUser.id,
+            owner_name: currentUser.fullName || ownerName.trim() || 'Student Founder',
+            owner_email: currentUser.email.toLowerCase().trim(),
+            student_faculty: studentFaculty,
+            student_dept: studentDept.trim(),
+            student_level: studentLevel.trim(),
+            whatsapp: whatsapp.replace(/[^0-9]/g, '') || '2348039281744',
+            rating: 5.0,
+            reviews_count: 1,
+            accepts_hostel_delivery: acceptsHostelDelivery,
+            starting_price: minPrice,
+            services: formattedServices,
+            image_url: resolvedImage,
+            badge: 'New Student Venture',
+            verified_student: true,
+          })
+          .select('*')
+          .single();
+
+        if (insertError) {
+          console.error('[CreateBusinessModal] Insert error:', insertError);
+          if (insertError.code === '23505' || insertError.message?.toLowerCase().includes('duplicate') || insertError.message?.toLowerCase().includes('unique')) {
+            setSubmitError('You already have a registered store on UNILORIN Campus Foundry.');
+          } else {
+            setSubmitError(mapMarketplaceError(insertError) || 'Failed to create your store. Please try again.');
+          }
+          setIsSubmitting(false);
+          return;
+        }
+
+        if (inserted?.id) {
+          createdId = inserted.id;
+        }
+
+        // Elevate user profile in database
+        try {
+          await supabase.from('profiles').update({
+            role: 'trader',
+            account_type: 'TRADER',
+            updated_at: new Date().toISOString(),
+          }).eq('id', currentUser.id);
+        } catch {}
+      }
+
+      const newBusiness: StudentBusiness = {
+        id: createdId,
+        name: name.trim(),
+        tagline: tagline.trim() || 'Verified student venture on UNILORIN Campus Foundry.',
+        description: description.trim() || `${name} provides trusted campus services direct to hostel students.`,
+        category,
+        university: 'University of Ilorin (UNILORIN)',
+        campus,
+        hostelLocation: resolvedHostelLocation,
+        ownerId: currentUser.id,
+        ownerName: currentUser.fullName || ownerName.trim() || 'Student Founder',
+        ownerEmail: currentUser.email.toLowerCase().trim(),
+        studentFaculty: studentFaculty,
+        studentDept: studentDept.trim(),
+        studentLevel: studentLevel.trim(),
+        whatsapp: whatsapp.replace(/[^0-9]/g, '') || '2348039281744',
+        rating: 5.0,
+        reviewsCount: 1,
+        acceptsHostelDelivery,
+        deliveryTimeEstimate: acceptsHostelDelivery ? deliveryTimeEstimate : undefined,
+        startingPrice: minPrice,
+        services: formattedServices,
+        imageUrl: resolvedImage,
+        badge: 'New Student Venture',
+        verifiedStudent: true,
+        activeOrdersToday: 0,
+      };
+
+      // Promote local user role to trader
+      if (currentUser.role !== 'trader') {
+        updateUser({ role: 'trader', accountType: 'TRADER' });
+      }
+
+      // Clear saved draft upon successful listing creation
+      try {
+        localStorage.removeItem(DRAFT_STORAGE_KEY);
+      } catch {}
+
+      onBusinessCreated(newBusiness);
+      onClose();
+    } catch (err: any) {
+      console.error('[CreateBusinessModal] Exception:', err);
+      setSubmitError('An unexpected error occurred while creating your store. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  return (
+  return createPortal(
     <div 
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200"
+      className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/85 backdrop-blur-sm animate-in fade-in duration-200"
       onClick={onClose}
     >
       <div 
-        className="relative flex flex-col max-h-[90vh] w-full max-w-2xl overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-900 shadow-2xl"
+        className="relative flex flex-col max-h-[90dvh] h-full sm:h-auto w-full sm:max-w-2xl overflow-hidden rounded-t-3xl sm:rounded-3xl border border-neutral-800 bg-neutral-900 shadow-2xl text-white"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Modal Header */}
-        <div className="flex items-center justify-between border-b border-neutral-800 px-6 py-4 bg-neutral-950/80">
+        {/* Part 1: Fixed Header */}
+        <div className="shrink-0 flex items-center justify-between border-b border-neutral-800 px-5 sm:px-6 py-4 bg-neutral-950/90 backdrop-blur-md">
           <div>
             <div className="flex items-center gap-2">
               <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-amber-500/20 text-amber-400 font-bold text-xs border border-amber-500/30">
@@ -318,7 +442,7 @@ export const CreateBusinessModal = ({
 
           <button
             onClick={onClose}
-            className="rounded-lg p-1.5 text-neutral-400 hover:bg-neutral-800 hover:text-white transition-colors"
+            className="rounded-lg p-1.5 text-neutral-400 hover:bg-neutral-800 hover:text-white transition-colors cursor-pointer"
           >
             <X className="h-5 w-5" />
           </button>
@@ -326,7 +450,7 @@ export const CreateBusinessModal = ({
 
         {/* Persistent Draft Notice */}
         {hasDraft && (
-          <div className="bg-amber-950/70 border-b border-amber-500/30 px-6 py-2 flex items-center justify-between text-xs text-amber-300">
+          <div className="shrink-0 bg-amber-950/70 border-b border-amber-500/30 px-6 py-2 flex items-center justify-between text-xs text-amber-300">
             <span className="flex items-center gap-1.5">
               <Sparkles className="h-3.5 w-3.5 text-amber-400" />
               <span>Restored unsubmitted listing draft</span>
@@ -342,11 +466,13 @@ export const CreateBusinessModal = ({
           </div>
         )}
 
-        {/* Scrollable Form */}
-        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-4 text-xs sm:text-sm">
-          
-          {/* Business Basic Info */}
-          <div className="space-y-3">
+        {/* Form Container with Flex Structure */}
+        <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0 overflow-hidden">
+          {/* Part 2: Middle Scrollable Body */}
+          <div className="flex-1 min-h-0 overflow-y-auto p-5 sm:p-6 space-y-4 text-xs sm:text-sm overscroll-contain">
+            
+            {/* Business Basic Info */}
+            <div className="space-y-3">
             <h3 className="text-xs font-bold text-emerald-400 uppercase tracking-wider">
               1. Business Profile
             </h3>
@@ -360,6 +486,7 @@ export const CreateBusinessModal = ({
                 required
                 value={name}
                 onChange={(e) => setName(e.target.value)}
+                onFocus={(e) => (e.target as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'center' })}
                 placeholder="e.g. Lagos Bakes & Pastries, PS Gadget Care"
                 className="w-full rounded-xl border border-neutral-800 bg-neutral-950 py-2.5 px-3 text-white placeholder-neutral-500 focus:border-emerald-500 focus:outline-none"
               />
@@ -373,6 +500,7 @@ export const CreateBusinessModal = ({
                 <select
                   value={category}
                   onChange={(e) => setCategory(e.target.value)}
+                  onFocus={(e) => (e.target as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'center' })}
                   className="w-full rounded-xl border border-neutral-800 bg-neutral-950 py-2.5 px-3 text-white focus:border-emerald-500 focus:outline-none"
                 >
                   {CATEGORIES.filter((c) => c !== 'All Categories').map((c) => (
@@ -388,6 +516,7 @@ export const CreateBusinessModal = ({
                 <select
                   value={campus}
                   onChange={(e) => setCampus(e.target.value as any)}
+                  onFocus={(e) => (e.target as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'center' })}
                   className="w-full rounded-xl border border-neutral-800 bg-neutral-950 py-2.5 px-3 text-white focus:border-emerald-500 focus:outline-none"
                 >
                   <option value="Permanent Site">Permanent Site (PS Hostels)</option>
@@ -406,22 +535,39 @@ export const CreateBusinessModal = ({
                 type="text"
                 value={tagline}
                 onChange={(e) => setTagline(e.target.value)}
+                onFocus={(e) => (e.target as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'center' })}
                 placeholder="e.g. Flaky warm meat pies and midnight snack boxes delivered to dorms."
                 className="w-full rounded-xl border border-neutral-800 bg-neutral-950 py-2.5 px-3 text-white placeholder-neutral-500 focus:border-emerald-500 focus:outline-none"
               />
             </div>
 
             <div>
-              <label className="text-xs font-medium text-neutral-300 block mb-1">
-                Full Description
-              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs font-medium text-neutral-300">
+                  Full Description *
+                </label>
+                <span className={`text-[11px] font-mono ${description.trim().length >= 20 ? 'text-emerald-400' : 'text-neutral-400'}`}>
+                  {description.trim().length}/20 chars min
+                </span>
+              </div>
               <textarea
-                rows={2}
+                rows={3}
+                required
+                minLength={20}
                 value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Describe your student business, specialty items, and how orders work."
-                className="w-full rounded-xl border border-neutral-800 bg-neutral-950 py-2 px-3 text-white placeholder-neutral-500 focus:border-emerald-500 focus:outline-none"
+                onFocus={(e) => (e.target as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'center' })}
+                onChange={(e) => {
+                  setDescription(e.target.value);
+                  if (e.target.value.trim().length >= 20) setDescriptionError('');
+                }}
+                placeholder="Describe your student business, specialty items, and how orders work (at least 20 characters)..."
+                className={`w-full rounded-xl border bg-neutral-950 py-2 px-3 text-white placeholder-neutral-500 focus:outline-none ${
+                  descriptionError ? 'border-red-500' : 'border-neutral-800 focus:border-emerald-500'
+                }`}
               />
+              {descriptionError && (
+                <p className="mt-1 text-xs text-red-400 font-medium">{descriptionError}</p>
+              )}
             </div>
           </div>
 
@@ -441,6 +587,7 @@ export const CreateBusinessModal = ({
                   required
                   value={ownerName}
                   onChange={(e) => setOwnerName(e.target.value)}
+                  onFocus={(e) => (e.target as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'center' })}
                   placeholder="e.g. Adeyinka Johnson"
                   className="w-full rounded-xl border border-neutral-800 bg-neutral-950 py-2.5 px-3 text-xs sm:text-sm text-white placeholder-neutral-500 focus:border-emerald-500 focus:outline-none"
                 />
@@ -453,6 +600,7 @@ export const CreateBusinessModal = ({
                 <select
                   value={studentLevel}
                   onChange={(e) => setStudentLevel(e.target.value)}
+                  onFocus={(e) => (e.target as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'center' })}
                   className="w-full rounded-xl border border-neutral-800 bg-neutral-950 py-2.5 px-3 text-xs sm:text-sm text-white focus:border-emerald-500 focus:outline-none cursor-pointer"
                 >
                   <option value="100 Level">100 Level</option>
@@ -497,6 +645,7 @@ export const CreateBusinessModal = ({
                   required
                   value={whatsapp}
                   onChange={(e) => setWhatsapp(e.target.value)}
+                  onFocus={(e) => (e.target as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'center' })}
                   placeholder="e.g. 08039281744 or 2348039281744"
                   className="w-full rounded-xl border border-neutral-800 bg-neutral-950 py-2.5 px-3 text-white placeholder-neutral-500 focus:border-emerald-500 focus:outline-none"
                 />
@@ -576,25 +725,45 @@ export const CreateBusinessModal = ({
             </div>
           </div>
 
-          {/* Action buttons */}
-          <div className="pt-4 flex items-center justify-end gap-3 border-t border-neutral-800">
+          {/* Error Notice */}
+          {submitError && (
+            <div className="p-3 rounded-xl border border-rose-500/30 bg-rose-950/20 text-rose-300 text-xs">
+              <span className="font-bold">Notice: </span>
+              {submitError}
+            </div>
+          )}
+
+          </div>
+
+          {/* Part 3: Sticky Footer */}
+          <div className="shrink-0 border-t border-neutral-800 bg-neutral-950 px-5 sm:px-6 py-3.5 flex items-center justify-end gap-3 pb-[calc(0.875rem+env(safe-area-inset-bottom,0px))]">
             <button
               type="button"
               onClick={onClose}
-              className="rounded-xl border border-neutral-800 bg-neutral-900 px-4 py-2.5 text-xs font-semibold text-neutral-300 hover:text-white"
+              disabled={isSubmitting}
+              className="rounded-xl border border-neutral-800 bg-neutral-900 hover:bg-neutral-800 px-4 py-2.5 text-xs font-semibold text-neutral-300 hover:text-white transition-colors cursor-pointer disabled:opacity-50"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 px-5 py-2.5 text-xs font-bold text-white shadow-lg shadow-emerald-950/40"
+              disabled={isSubmitting}
+              className="rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 px-5 py-2.5 text-xs font-bold text-white shadow-lg shadow-emerald-950/40 disabled:opacity-50 flex items-center gap-2 cursor-pointer active:scale-95 transition-all"
             >
-              Publish Trade Listing
+              {isSubmitting ? (
+                <>
+                  <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  <span>Registering Store...</span>
+                </>
+              ) : (
+                <span>Publish Trade Listing</span>
+              )}
             </button>
           </div>
 
         </form>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };

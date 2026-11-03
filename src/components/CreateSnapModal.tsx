@@ -2,28 +2,23 @@ import React, { useState, useRef, type FormEvent } from 'react';
 import { 
   X, 
   MapPin, 
-  Sparkles, 
-  Image as ImageIcon, 
   Camera, 
   UploadCloud, 
-  Video, 
-  Music, 
   Users, 
-  Lock, 
-  Plus, 
   Check, 
-  AlertCircle,
-  Radio
+  Radio, 
+  Image as ImageIcon
 } from 'lucide-react';
 import { CampusSnap, StudentLevel, StorySticker } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { LiveCameraModal } from './LiveCameraModal';
-import { compressImageFile } from '../utils/imageOptimizer';
+import { uploadSnapMedia, emitAppToast } from '../services/supabase';
+import { dataUrlToBlob } from '../utils/imageOptimizer';
 
 interface CreateSnapModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSnapCreated: (newSnap: CampusSnap) => void;
+  onSnapCreated: (newSnap: CampusSnap) => void | Promise<void>;
   onRequireAuth?: () => void;
 }
 
@@ -42,21 +37,6 @@ const UNILORIN_LANDMARK_TAGS = [
   'Main Auditorium Lawn',
 ];
 
-const SAMPLE_MUSIC_TRACKS = [
-  { id: 'm_1', title: 'Lonely at the Top', artist: 'Asake' },
-  { id: 'm_2', title: 'City Boys', artist: 'Burna Boy' },
-  { id: 'm_3', title: 'Commas', artist: 'Ayra Starr' },
-  { id: 'm_4', title: 'UNILORIN Anthem & Beat', artist: 'Campus Foundry Ensemble' },
-];
-
-const SAMPLE_SNAP_IMAGES = [
-  'https://images.unsplash.com/photo-1523050854058-8df90110c9f1?auto=format&fit=crop&w=800&q=80',
-  'https://images.unsplash.com/photo-1517486808906-6ca8b3f04846?auto=format&fit=crop&w=800&q=80',
-  'https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=800&q=80',
-  'https://images.unsplash.com/photo-1509440159596-0249088772ff?auto=format&fit=crop&w=800&q=80',
-  'https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=800&q=80',
-];
-
 export const CreateSnapModal: React.FC<CreateSnapModalProps> = ({
   isOpen,
   onClose,
@@ -65,22 +45,22 @@ export const CreateSnapModal: React.FC<CreateSnapModalProps> = ({
 }) => {
   const { currentUser } = useAuth();
   const [caption, setCaption] = useState('');
-  const [locationTag, setLocationTag] = useState(UNILORIN_LANDMARK_TAGS[0]);
-  const [selectedImage, setSelectedImage] = useState(SAMPLE_SNAP_IMAGES[0]);
+  const [locationTag, setLocationTag] = useState('');
   const [customMediaUrl, setCustomMediaUrl] = useState('');
   const [mediaType, setMediaType] = useState<'image' | 'video'>('image');
+  const [isUploadingMedia, setIsUploadingMedia] = useState(false);
   
-  // Instagram / WhatsApp Model: Audience Privacy Controls
-  const [privacySetting, setPrivacySetting] = useState<'all' | 'close_friends' | 'except'>('all');
+  // Privacy Settings ('all' | 'close_friends')
+  const [privacySetting, setPrivacySetting] = useState<'all' | 'close_friends'>('all');
   
-  // Music Track Selection
-  const [selectedMusic, setSelectedMusic] = useState<typeof SAMPLE_MUSIC_TRACKS[0] | null>(null);
+  // Interactive Poll Sticker Toggle & State
+  const [pollData, setPollData] = useState<{ question: string; opt1: string; opt2: string } | null>(null);
 
-  // Interactive Poll Sticker Toggle
-  const [includePoll, setIncludePoll] = useState(false);
-  const [pollQuestion, setPollQuestion] = useState('Attending today? 🔥');
-  const [pollOpt1, setPollOpt1] = useState('Yes, definitely!');
-  const [pollOpt2, setPollOpt2] = useState('Studying in room');
+  // Active Bottom Sheet ('audience' | 'location' | 'poll' | null)
+  const [activeSheet, setActiveSheet] = useState<'audience' | 'location' | 'poll' | null>(null);
+  const [tempPollQ, setTempPollQ] = useState('Attending today? 🔥');
+  const [tempOpt1, setTempOpt1] = useState('Yes, definitely!');
+  const [tempOpt2, setTempOpt2] = useState('Studying in room');
 
   const [isLiveCameraOpen, setIsLiveCameraOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -90,7 +70,7 @@ export const CreateSnapModal: React.FC<CreateSnapModalProps> = ({
   if (!currentUser) {
     return (
       <div 
-        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in"
+        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in"
         onClick={onClose}
       >
         <div 
@@ -100,7 +80,7 @@ export const CreateSnapModal: React.FC<CreateSnapModalProps> = ({
           <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-500/20 text-amber-400 mx-auto">
             <Camera className="h-6 w-6" />
           </div>
-          <h3 className="text-base font-bold">Sign In to Post Campus Statuses</h3>
+          <h3 className="text-base font-bold">Sign In to Post Campus Stories</h3>
           <p className="text-xs text-neutral-400">
             Share 24-hour auto-expiring media moments with granular privacy controls.
           </p>
@@ -123,32 +103,38 @@ export const CreateSnapModal: React.FC<CreateSnapModalProps> = ({
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const isVid = file.type.startsWith('video');
-    setMediaType(isVid ? 'video' : 'image');
+    if (!currentUser) {
+      onRequireAuth?.();
+      return;
+    }
 
     try {
-      if (isVid) {
-        const reader = new FileReader();
-        reader.onload = (event) => {
-          if (typeof event.target?.result === 'string') {
-            setCustomMediaUrl(event.target.result);
-          }
-        };
-        reader.readAsDataURL(file);
-      } else {
-        const compressed = await compressImageFile(file, {
-          maxWidth: 1280,
-          maxHeight: 1280,
-          quality: 0.85,
-        });
-        setCustomMediaUrl(compressed);
+      setIsUploadingMedia(true);
+      const result = await uploadSnapMedia(file, currentUser.id);
+      if (result) {
+        setCustomMediaUrl(result.url);
+        setMediaType(result.mediaType);
       }
-    } catch {}
+    } catch (err: any) {
+      console.error('[Snap Upload Handler Error]:', err);
+      emitAppToast('Failed to upload media. Please try again.', 'error');
+    } finally {
+      setIsUploadingMedia(false);
+      e.target.value = '';
+    }
   };
 
-  const handleSubmit = (e: FormEvent) => {
-    e.preventDefault();
-    if (!caption.trim()) return;
+  const handleSubmit = async (e?: FormEvent) => {
+    if (e) e.preventDefault();
+
+    // LAUNCH POLISH: Double-submit prevention while upload is active
+    if (isUploadingMedia) return;
+
+    const targetMediaUrl = customMediaUrl.trim();
+    if (!targetMediaUrl || targetMediaUrl.startsWith('blob:')) {
+      emitAppToast('Please select or capture photo/video media for your story.', 'error');
+      return;
+    }
 
     const stickers: StorySticker[] = [];
 
@@ -164,14 +150,14 @@ export const CreateSnapModal: React.FC<CreateSnapModalProps> = ({
       });
     }
 
-    if (includePoll && pollQuestion.trim()) {
+    if (pollData && pollData.question.trim()) {
       stickers.push({
         id: `poll_${Date.now()}`,
         type: 'poll',
-        question: pollQuestion.trim(),
+        question: pollData.question.trim(),
         options: [
-          { id: 'opt_1', text: pollOpt1.trim() || 'Option 1', votes: 1 },
-          { id: 'opt_2', text: pollOpt2.trim() || 'Option 2', votes: 0 },
+          { id: 'opt_1', text: pollData.opt1.trim() || 'Option 1', votes: 1 },
+          { id: 'opt_2', text: pollData.opt2.trim() || 'Option 2', votes: 0 },
         ],
         x: 0.5,
         y: 0.55,
@@ -182,276 +168,389 @@ export const CreateSnapModal: React.FC<CreateSnapModalProps> = ({
       id: `snap_${Date.now()}`,
       authorId: currentUser.id,
       authorName: currentUser.fullName || 'Student',
-      authorAvatar: currentUser.avatarUrl || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=200',
+      authorUsername: currentUser.username || currentUser.email.split('@')[0],
+      authorAvatar: currentUser.avatarUrl || '',
       authorDept: currentUser.department || 'General Studies',
       authorLevel: (currentUser.level as StudentLevel) || '300L',
-      locationTag,
-      mediaUrl: customMediaUrl.trim() || selectedImage,
+      locationTag: locationTag || UNILORIN_LANDMARK_TAGS[0],
+      mediaUrl: targetMediaUrl,
       mediaType,
       caption: caption.trim(),
       createdAt: new Date().toISOString(),
       expiresInHours: 24,
       viewsCount: 1,
       privacySetting,
-      musicTrack: selectedMusic || undefined,
       stickers,
     };
 
-    onSnapCreated(newSnap);
-    setCaption('');
-    setCustomMediaUrl('');
-    onClose();
+    try {
+      await onSnapCreated(newSnap);
+      setCaption('');
+      setCustomMediaUrl('');
+      onClose();
+    } catch (err: any) {
+      // LAUNCH POLISH: Safe error catch with custom toast notification
+      console.error('[CreateSnapModal Submit Error]:', err);
+      emitAppToast(err?.message ? `Failed to post story: ${err.message}` : 'Failed to post story. Please try again.', 'error');
+    }
   };
 
   return (
-    <div 
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md animate-in fade-in"
-      onClick={onClose}
-    >
-      <div 
-        className="relative flex flex-col w-full max-w-lg rounded-3xl border border-neutral-800 bg-neutral-900 shadow-2xl overflow-hidden max-h-[92vh] text-white"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-neutral-800 bg-neutral-950 px-5 py-4">
-          <div className="flex items-center gap-2">
-            <Sparkles className="h-4 w-4 text-amber-400" />
-            <h3 className="text-sm font-bold text-white">Create 24-Hour Campus Status</h3>
-          </div>
-          <button type="button" onClick={onClose} className="text-neutral-400 hover:text-white">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black select-none overflow-hidden">
+      {/* Fullscreen Mobile Story Composer container */}
+      <div className="relative w-full h-full sm:max-h-[92vh] sm:max-w-md sm:rounded-3xl sm:border sm:border-neutral-800 bg-neutral-950 overflow-hidden flex flex-col justify-between shadow-2xl text-white">
+
+        {/* Hidden inputs for gallery upload & file picker */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*,video/*"
+          style={{ display: 'none' }}
+          onChange={handleFileUpload}
+        />
+
+        {/* Top Header Row: Close (X) on left, Icon Row on right (Audience, Location, Poll) */}
+        <div className="absolute top-4 inset-x-4 z-30 flex items-center justify-between pointer-events-auto">
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-10 w-10 items-center justify-center rounded-full bg-black/50 backdrop-blur-md text-white border border-white/10 hover:bg-black/70 transition-colors cursor-pointer shadow-md"
+            aria-label="Close Composer"
+          >
             <X className="h-5 w-5" />
+          </button>
+
+          {/* Small row of icon buttons for audience, location tag, poll */}
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setActiveSheet(activeSheet === 'audience' ? null : 'audience')}
+              className={`flex h-10 w-10 items-center justify-center rounded-full backdrop-blur-md border transition-colors cursor-pointer shadow-md ${
+                privacySetting === 'close_friends' ? 'bg-emerald-500 text-white border-emerald-400' : 'bg-black/50 text-white border-white/10 hover:bg-black/70'
+              }`}
+              title="Audience Privacy"
+            >
+              <Users className="h-4.5 w-4.5" />
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveSheet(activeSheet === 'location' ? null : 'location')}
+              className={`flex h-10 w-10 items-center justify-center rounded-full backdrop-blur-md border transition-colors cursor-pointer shadow-md ${
+                locationTag ? 'bg-amber-500 text-black font-bold border-amber-400' : 'bg-black/50 text-white border-white/10 hover:bg-black/70'
+              }`}
+              title="Add Location Tag"
+            >
+              <MapPin className="h-4.5 w-4.5" />
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveSheet(activeSheet === 'poll' ? null : 'poll')}
+              className={`flex h-10 w-10 items-center justify-center rounded-full backdrop-blur-md border transition-colors cursor-pointer shadow-md ${
+                pollData ? 'bg-amber-500 text-black font-bold border-amber-400' : 'bg-black/50 text-white border-white/10 hover:bg-black/70'
+              }`}
+              title="Add Interactive Poll"
+            >
+              <Radio className="h-4.5 w-4.5" />
+            </button>
+          </div>
+        </div>
+
+        {/* Media Viewport Filling Screen */}
+        <div className="relative w-full h-full bg-neutral-900 flex items-center justify-center overflow-hidden">
+          {customMediaUrl ? (
+            mediaType === 'video' ? (
+              <video src={customMediaUrl} autoPlay loop playsInline className="h-full w-full object-cover" />
+            ) : (
+              <img src={customMediaUrl} alt="Story Media" className="h-full w-full object-cover" />
+            )
+          ) : (
+            <div className="flex flex-col items-center justify-center p-6 text-center space-y-4 z-20">
+              <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-white/10 border border-white/20 text-white">
+                <ImageIcon className="h-8 w-8 text-amber-400" />
+              </div>
+              <div className="space-y-1">
+                <h4 className="text-base font-bold text-white">Create 24-Hour Story</h4>
+                <p className="text-xs text-neutral-400 max-w-xs">
+                  Capture a live moment or upload photo/video from your device gallery.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsLiveCameraOpen(true)}
+                  className="inline-flex items-center gap-2 rounded-full bg-white text-black px-5 py-3 text-xs font-bold transition-all shadow-lg hover:bg-neutral-200 cursor-pointer"
+                >
+                  <Camera className="h-4 w-4" />
+                  <span>Open Camera</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="inline-flex items-center gap-2 rounded-full bg-white/10 text-white border border-white/20 px-5 py-3 text-xs font-semibold transition-all hover:bg-white/20 cursor-pointer"
+                >
+                  <UploadCloud className="h-4 w-4 text-amber-400" />
+                  <span>Gallery</span>
+                </button>
+              </div>
+
+              {isUploadingMedia && (
+                <div className="flex items-center gap-2 text-xs text-amber-400 pt-2">
+                  <div className="h-3.5 w-3.5 rounded-full border-2 border-amber-400 border-t-transparent animate-spin" />
+                  <span>Processing media upload...</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Active Poll Badge on Media if Present */}
+          {pollData && customMediaUrl && (
+            <div className="absolute inset-x-6 top-24 z-20 bg-black/60 backdrop-blur-md rounded-2xl p-4 border border-white/20 shadow-xl space-y-2 pointer-events-none">
+              <span className="text-[10px] font-bold text-amber-400 uppercase tracking-widest block">Interactive Poll</span>
+              <p className="text-xs font-bold text-white">{pollData.question}</p>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="bg-white/10 rounded-xl p-2 text-center text-xs font-semibold text-white">{pollData.opt1}</div>
+                <div className="bg-white/10 rounded-xl p-2 text-center text-xs font-semibold text-white">{pollData.opt2}</div>
+              </div>
+            </div>
+          )}
+
+          {/* Active Location Badge on Media if Present */}
+          {locationTag && customMediaUrl && (
+            <div className="absolute top-20 left-4 z-20 bg-black/60 backdrop-blur-md rounded-full px-3 py-1.5 border border-white/20 flex items-center gap-1.5 text-xs font-semibold text-white shadow-lg pointer-events-none">
+              <MapPin className="h-3.5 w-3.5 text-emerald-400" />
+              <span>{locationTag}</span>
+            </div>
+          )}
+        </div>
+
+        {/* Bottom Overlay: Caption Input (Optional) & One Primary Share Button */}
+        <div className="absolute bottom-6 inset-x-4 z-30 flex flex-col gap-3 pointer-events-auto">
+          {/* Optional Caption Input */}
+          <input
+            type="text"
+            value={caption}
+            onChange={(e) => setCaption(e.target.value)}
+            placeholder="Add a caption to your story (optional)..."
+            className="w-full rounded-2xl bg-black/60 backdrop-blur-md border border-white/20 px-4 py-3 text-xs sm:text-sm text-white placeholder-neutral-400 focus:outline-none focus:border-amber-400 shadow-xl"
+          />
+
+          {/* Primary Share Button */}
+          <button
+            type="button"
+            onClick={() => handleSubmit()}
+            disabled={isUploadingMedia || !customMediaUrl}
+            className="w-full flex items-center justify-center gap-2 rounded-2xl bg-amber-500 hover:bg-amber-400 disabled:opacity-40 py-3.5 text-xs sm:text-sm font-bold text-neutral-950 transition-all shadow-xl shadow-amber-950/50 cursor-pointer"
+          >
+            <Check className="h-4.5 w-4.5" />
+            <span>Share Story (24 Hours)</span>
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-5 space-y-4">
-          
-          {/* 1. Audience & Privacy Selection (Instagram/WhatsApp Model) */}
-          <div className="p-3 rounded-2xl bg-neutral-950 border border-neutral-800 space-y-2">
-            <label className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider flex items-center gap-1.5">
-              <Users className="h-3.5 w-3.5 text-amber-400" />
-              <span>Audience & Privacy Selector</span>
-            </label>
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              <button
-                type="button"
-                onClick={() => setPrivacySetting('all')}
-                className={`p-2.5 rounded-xl border text-left transition-all ${
-                  privacySetting === 'all'
-                    ? 'bg-amber-500/20 border-amber-500/50 text-amber-300 font-bold'
-                    : 'bg-neutral-900 border-neutral-800 text-neutral-400'
-                }`}
-              >
-                <span>🌍 All Campus Contacts</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setPrivacySetting('close_friends')}
-                className={`p-2.5 rounded-xl border text-left transition-all ${
-                  privacySetting === 'close_friends'
-                    ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-300 font-bold ring-1 ring-emerald-400'
-                    : 'bg-neutral-900 border-neutral-800 text-neutral-400'
-                }`}
-              >
-                <span>⭐ Close Friends & Founders</span>
-              </button>
-            </div>
-          </div>
-
-          {/* 2. Media Source Selection */}
-          <div className="space-y-2">
-            <label className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider">
-              Photo / Video Source
-            </label>
-            
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="flex-1 p-2.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-white text-xs font-bold flex items-center justify-center gap-2 border border-neutral-700 transition-colors cursor-pointer"
-              >
-                <UploadCloud className="h-4 w-4 text-amber-400" />
-                <span>Upload File</span>
-              </button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*,video/*"
-                onChange={handleFileUpload}
-                className="hidden"
-              />
-
-              <button
-                type="button"
-                onClick={() => setIsLiveCameraOpen(true)}
-                className="flex-1 p-2.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-white text-xs font-bold flex items-center justify-center gap-2 border border-neutral-700 transition-colors cursor-pointer"
-              >
-                <Camera className="h-4 w-4 text-emerald-400" />
-                <span>Live Camera</span>
-              </button>
-            </div>
-
-            {/* Quick Sample Presets */}
-            <div className="pt-1">
-              <span className="text-[10px] text-neutral-500 block mb-1">Or choose a campus preset:</span>
-              <div className="flex gap-2 overflow-x-auto pb-1">
-                {SAMPLE_SNAP_IMAGES.map((img, i) => (
-                  <img
-                    key={i}
-                    src={img}
-                    alt="Preset"
-                    onClick={() => {
-                      setSelectedImage(img);
-                      setCustomMediaUrl('');
-                    }}
-                    className={`h-14 w-14 rounded-xl object-cover cursor-pointer border-2 shrink-0 ${
-                      !customMediaUrl && selectedImage === img ? 'border-amber-400 scale-105' : 'border-transparent opacity-70'
-                    }`}
-                  />
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* 3. Status Caption */}
-          <div className="space-y-1">
-            <label className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider">
-              Caption & Thoughts
-            </label>
-            <input
-              type="text"
-              required
-              value={caption}
-              onChange={(e) => setCaption(e.target.value)}
-              placeholder="e.g. Studying for GNS 111 at CBT Centre..."
-              className="w-full p-2.5 rounded-xl bg-neutral-950 border border-neutral-800 text-xs sm:text-sm text-white focus:outline-none focus:border-amber-400"
-            />
-          </div>
-
-          {/* 4. Background Music Track (Instagram Model) */}
-          <div className="p-3 rounded-2xl bg-neutral-950 border border-neutral-800 space-y-2">
-            <label className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider flex items-center justify-between">
-              <span className="flex items-center gap-1.5">
-                <Music className="h-3.5 w-3.5 text-amber-400" />
-                <span>Background Soundtrack</span>
-              </span>
-              {selectedMusic && (
-                <button type="button" onClick={() => setSelectedMusic(null)} className="text-[10px] text-rose-400 hover:underline">
-                  Remove
-                </button>
-              )}
-            </label>
-            
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              {SAMPLE_MUSIC_TRACKS.map((track) => (
+        {/* Compact Bottom Sheet Modals for Audience, Location, Poll */}
+        {activeSheet && (
+          <div 
+            className="absolute inset-0 z-40 bg-black/70 backdrop-blur-sm flex items-end animate-in fade-in"
+            onClick={() => setActiveSheet(null)}
+          >
+            <div 
+              className="w-full bg-neutral-900 border-t border-neutral-800 rounded-t-3xl p-6 space-y-4 max-h-[70vh] overflow-y-auto shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between pb-2 border-b border-neutral-800">
+                <h4 className="text-sm font-bold text-white">
+                  {activeSheet === 'audience' && 'Story Audience Privacy'}
+                  {activeSheet === 'location' && 'Tag UNILORIN Landmark'}
+                  {activeSheet === 'poll' && 'Add Interactive Poll'}
+                </h4>
                 <button
-                  key={track.id}
                   type="button"
-                  onClick={() => setSelectedMusic(track)}
-                  className={`p-2 rounded-xl border text-left truncate transition-all ${
-                    selectedMusic?.id === track.id
-                      ? 'bg-amber-500/20 border-amber-500/50 text-amber-300 font-bold'
-                      : 'bg-neutral-900 border-neutral-800 text-neutral-400 hover:text-white'
-                  }`}
+                  onClick={() => setActiveSheet(null)}
+                  className="p-1 rounded-full bg-neutral-800 text-neutral-400 hover:text-white"
                 >
-                  <span className="block truncate font-bold">{track.title}</span>
-                  <span className="block truncate text-[10px] text-neutral-500">{track.artist}</span>
+                  <X className="h-4 w-4" />
                 </button>
-              ))}
-            </div>
-          </div>
-
-          {/* 5. Location Tag */}
-          <div className="space-y-1">
-            <label className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider flex items-center gap-1.5">
-              <MapPin className="h-3.5 w-3.5 text-emerald-400" />
-              <span>UNILORIN Landmark Tag</span>
-            </label>
-            <select
-              value={locationTag}
-              onChange={(e) => setLocationTag(e.target.value)}
-              className="w-full p-2.5 rounded-xl bg-neutral-950 border border-neutral-800 text-xs text-white focus:outline-none focus:border-amber-400"
-            >
-              {UNILORIN_LANDMARK_TAGS.map((tag) => (
-                <option key={tag} value={tag}>{tag}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* 6. Interactive Poll Overlay Toggle */}
-          <div className="p-3 rounded-2xl bg-neutral-950 border border-neutral-800 space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-white flex items-center gap-1.5">
-                <Radio className="h-3.5 w-3.5 text-amber-400" />
-                <span>Interactive Poll Overlay</span>
-              </span>
-              <button
-                type="button"
-                onClick={() => setIncludePoll(!includePoll)}
-                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
-                  includePoll ? 'bg-amber-500 text-neutral-950' : 'bg-neutral-800 text-neutral-400'
-                }`}
-              >
-                {includePoll ? 'Enabled' : '+ Add Poll'}
-              </button>
-            </div>
-
-            {includePoll && (
-              <div className="space-y-2 pt-1">
-                <input
-                  type="text"
-                  value={pollQuestion}
-                  onChange={(e) => setPollQuestion(e.target.value)}
-                  placeholder="Poll Question..."
-                  className="w-full p-2 rounded-xl bg-neutral-900 border border-neutral-800 text-xs text-white"
-                />
-                <div className="grid grid-cols-2 gap-2">
-                  <input
-                    type="text"
-                    value={pollOpt1}
-                    onChange={(e) => setPollOpt1(e.target.value)}
-                    placeholder="Option 1"
-                    className="p-2 rounded-xl bg-neutral-900 border border-neutral-800 text-xs text-white"
-                  />
-                  <input
-                    type="text"
-                    value={pollOpt2}
-                    onChange={(e) => setPollOpt2(e.target.value)}
-                    placeholder="Option 2"
-                    className="p-2 rounded-xl bg-neutral-900 border border-neutral-800 text-xs text-white"
-                  />
-                </div>
               </div>
-            )}
-          </div>
 
-          {/* Submit Action */}
-          <div className="flex justify-end gap-2 pt-2 border-t border-neutral-800">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 rounded-xl bg-neutral-800 text-neutral-300 text-xs font-semibold hover:bg-neutral-700"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 text-xs font-bold shadow-lg transition-transform active:scale-95 cursor-pointer"
-            >
-              Post Status (24 Hours)
-            </button>
-          </div>
+              {/* 1. Audience Sheet Content */}
+              {activeSheet === 'audience' && (
+                <div className="space-y-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPrivacySetting('all');
+                      setActiveSheet(null);
+                    }}
+                    className={`w-full p-3 rounded-2xl border text-left flex items-center justify-between transition-all ${
+                      privacySetting === 'all'
+                        ? 'bg-amber-500/20 border-amber-500/50 text-amber-300 font-bold'
+                        : 'bg-neutral-950 border-neutral-800 text-neutral-300'
+                    }`}
+                  >
+                    <span>🌍 All Campus Contacts</span>
+                    {privacySetting === 'all' && <Check className="h-4 w-4 text-amber-400" />}
+                  </button>
 
-        </form>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPrivacySetting('close_friends');
+                      setActiveSheet(null);
+                    }}
+                    className={`w-full p-3 rounded-2xl border text-left flex items-center justify-between transition-all ${
+                      privacySetting === 'close_friends'
+                        ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-300 font-bold'
+                        : 'bg-neutral-950 border-neutral-800 text-neutral-300'
+                    }`}
+                  >
+                    <span>⭐ Close Friends & Founders</span>
+                    {privacySetting === 'close_friends' && <Check className="h-4 w-4 text-emerald-400" />}
+                  </button>
+                </div>
+              )}
+
+              {/* 2. Location Sheet Content */}
+              {activeSheet === 'location' && (
+                <div className="space-y-2 max-h-60 overflow-y-auto">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLocationTag('');
+                      setActiveSheet(null);
+                    }}
+                    className="w-full p-2.5 rounded-xl bg-neutral-950 border border-neutral-800 text-xs text-neutral-400 hover:text-white text-left"
+                  >
+                    No Landmark Tag
+                  </button>
+                  {UNILORIN_LANDMARK_TAGS.map((tag) => (
+                    <button
+                      key={tag}
+                      type="button"
+                      onClick={() => {
+                        setLocationTag(tag);
+                        setActiveSheet(null);
+                      }}
+                      className={`w-full p-3 rounded-xl border text-left text-xs font-semibold transition-all ${
+                        locationTag === tag
+                          ? 'bg-amber-500/20 border-amber-500/50 text-amber-300'
+                          : 'bg-neutral-950 border-neutral-800 text-neutral-300 hover:text-white'
+                      }`}
+                    >
+                      📍 {tag}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* 3. Poll Sheet Content */}
+              {activeSheet === 'poll' && (
+                <div className="space-y-3">
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-bold text-neutral-400 uppercase">Poll Question</label>
+                    <input
+                      type="text"
+                      value={tempPollQ}
+                      onChange={(e) => setTempPollQ(e.target.value)}
+                      placeholder="Ask your campus a question..."
+                      className="w-full p-3 rounded-xl bg-neutral-950 border border-neutral-800 text-xs text-white"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-bold text-neutral-400 uppercase">Option 1</label>
+                      <input
+                        type="text"
+                        value={tempOpt1}
+                        onChange={(e) => setTempOpt1(e.target.value)}
+                        className="w-full p-3 rounded-xl bg-neutral-950 border border-neutral-800 text-xs text-white"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-bold text-neutral-400 uppercase">Option 2</label>
+                      <input
+                        type="text"
+                        value={tempOpt2}
+                        onChange={(e) => setTempOpt2(e.target.value)}
+                        className="w-full p-3 rounded-xl bg-neutral-950 border border-neutral-800 text-xs text-white"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 pt-2">
+                    {pollData && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPollData(null);
+                          setActiveSheet(null);
+                        }}
+                        className="flex-1 py-2.5 rounded-xl bg-rose-500/20 text-rose-300 text-xs font-bold"
+                      >
+                        Remove Poll
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPollData({ question: tempPollQ, opt1: tempOpt1, opt2: tempOpt2 });
+                        setActiveSheet(null);
+                      }}
+                      className="flex-1 py-2.5 rounded-xl bg-amber-500 text-neutral-950 text-xs font-bold"
+                    >
+                      Apply Poll Sticker
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
       </div>
 
+      {/* Live Camera Modal Integration */}
       {isLiveCameraOpen && (
         <LiveCameraModal
           isOpen={isLiveCameraOpen}
           onClose={() => setIsLiveCameraOpen(false)}
-          onCapture={(url, type) => {
-            setCustomMediaUrl(url);
-            setMediaType(type);
+          onCapture={async (url, type, fileOrBlob) => {
             setIsLiveCameraOpen(false);
+            if (!currentUser) return;
+            try {
+              setIsUploadingMedia(true);
+              let targetBlob: File | Blob | null = fileOrBlob || null;
+              if (!targetBlob && url.startsWith('data:')) {
+                try {
+                  targetBlob = dataUrlToBlob(url);
+                } catch {}
+              }
+              if (!targetBlob && url.startsWith('blob:')) {
+                try {
+                  const res = await fetch(url);
+                  targetBlob = await res.blob();
+                } catch {}
+              }
+
+              if (!targetBlob) {
+                emitAppToast('Unable to process captured media.', 'error');
+                return;
+              }
+
+              const result = await uploadSnapMedia(targetBlob, currentUser.id);
+              if (result?.url && !result.url.startsWith('blob:')) {
+                setCustomMediaUrl(result.url);
+                setMediaType(result.mediaType);
+              }
+            } catch (err: any) {
+              console.error('[Live Capture Upload Error]:', err);
+              emitAppToast('Failed to upload camera media: ' + (err?.message || 'Upload error'), 'error');
+            } finally {
+              setIsUploadingMedia(false);
+            }
           }}
         />
       )}
@@ -460,3 +559,4 @@ export const CreateSnapModal: React.FC<CreateSnapModalProps> = ({
 };
 
 export default CreateSnapModal;
+

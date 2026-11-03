@@ -30,10 +30,8 @@ import {
   Phone, 
   ExternalLink, 
   RefreshCw, 
-  Smartphone, 
   Laptop, 
-  Maximize2, 
-  Minimize2, 
+  Lock, 
   X, 
   PlusCircle, 
   ArrowLeft, 
@@ -51,7 +49,8 @@ import {
   Layers,
   ArrowRight,
   TrendingUp,
-  Award
+  Award,
+  AlertCircle
 } from 'lucide-react';
 
 import { 
@@ -63,13 +62,13 @@ import {
   UserRole, 
   AppUser 
 } from '../../types';
-import { INITIAL_BUSINESSES } from '../../data/mockData';
-import { INITIAL_CAMPUS_POSTS, INITIAL_CAMPUS_SNAPS } from '../../data/socialMockData';
 import { useAuth } from '../../context/AuthContext';
 import { useCart } from '../../context/CartContext';
 import { useChat } from '../../context/ChatContext';
+import { useMarketplaceChat } from '../../context/MarketplaceChatContext';
+import { CURRENT_ACADEMIC_SESSION } from '../../constants/academic';
+import { StudentIDCard } from '../../components/playercard';
 
-import { UnilorinAuthModule } from '../auth/UnilorinAuthModule';
 import { StoriesViewerScreen, MobileStoryItem } from '../screens/StoriesViewerScreen';
 import { RealTimeChatScreen } from '../screens/RealTimeChatScreen';
 import { BiometricsService } from '../auth/BiometricsService';
@@ -82,9 +81,10 @@ import { CampusNewsView } from '../../components/CampusNewsView';
 import { CampusMapView } from '../../components/CampusMapView';
 import { PostCard } from '../../components/PostCard';
 import { BusinessCard } from '../../components/BusinessCard';
+import { MyStoreModal } from '../../components/MyStoreModal';
 
 export type MobileTab = 'feed' | 'market' | 'campus' | 'chats' | 'profile';
-export type CampusSubHub = 'politics' | 'academics' | 'clubs' | 'news' | 'map';
+export type CampusSubHub = 'politics' | 'academics' | 'clubs' | 'news' | 'map' | 'idcard' | null;
 
 export interface RootNavigatorProps {
   businesses?: StudentBusiness[];
@@ -109,12 +109,15 @@ export interface RootNavigatorProps {
   showToast?: (msg: string) => void;
   onSwitchToWeb?: () => void;
   onViewUserProfile?: (authorId?: string, authorDetails?: any) => void;
+  isLoadingBusinesses?: boolean;
+  businessesError?: string | null;
+  onRetryBusinesses?: () => void;
 }
 
 export const RootNavigator: React.FC<RootNavigatorProps> = ({
-  businesses = INITIAL_BUSINESSES,
-  posts = INITIAL_CAMPUS_POSTS,
-  snaps = INITIAL_CAMPUS_SNAPS,
+  businesses = [],
+  posts = [],
+  snaps = [],
   selectedLevel = 'All',
   onSelectLevel = () => {},
   onLikeToggle = () => {},
@@ -134,31 +137,34 @@ export const RootNavigator: React.FC<RootNavigatorProps> = ({
   showToast = () => {},
   onSwitchToWeb,
   onViewUserProfile,
+  isLoadingBusinesses = false,
+  businessesError = null,
+  onRetryBusinesses,
 }) => {
   const { currentUser, signOut } = useAuth();
   const { totalItemCount, setIsCartOpen } = useCart();
   const { unreadTotalCount, pendingRequestsCount, conversations, openChatWithBusiness } = useChat();
+  const { conversations: marketplaceConversations, openMarketplaceChat } = useMarketplaceChat();
 
   // Navigation State
   const [activeTab, setActiveTab] = useState<MobileTab>('feed');
-  const [activeCampusSubHub, setActiveCampusSubHub] = useState<CampusSubHub>('politics');
+  const [activeCampusSubHub, setActiveCampusSubHub] = useState<CampusSubHub | null>(null);
 
-  // Display Mode: 'frame' (mobile phone bezel simulator) vs 'fullscreen' (edge-to-edge)
-  const [displayMode, setDisplayMode] = useState<'frame' | 'fullscreen'>('frame');
 
   // Quick Action Sheet state (center '+' FAB)
   const [isActionSheetOpen, setIsActionSheetOpen] = useState(false);
+
+  // My Store modal state
+  const [selectedMyStore, setSelectedMyStore] = useState<StudentBusiness | null>(null);
 
   // Search & Filters in Marketplace
   const [marketSearch, setMarketSearch] = useState('');
   const [marketCategory, setMarketCategory] = useState<string>('All');
   const [marketCampus, setMarketCampus] = useState<string>('All');
+  const [isZoneFilterSheetOpen, setIsZoneFilterSheetOpen] = useState(false);
 
   // Feed Category Filter
   const [feedCategory, setFeedCategory] = useState<string>('All Buzz');
-
-  // Institutional Auth Modal state
-  const [showInstitutionalAuth, setShowInstitutionalAuth] = useState(false);
 
   // Active Story Viewer State (WhatsApp/IG format)
   const [activeStoryData, setActiveStoryData] = useState<{
@@ -249,82 +255,32 @@ export const RootNavigator: React.FC<RootNavigatorProps> = ({
   const FEED_CATEGORIES = ['All Buzz', 'Academics & GNS', 'Student Hustle & Trades', 'SUG & Elections', 'Events & Sports', 'Campus Life'];
 
   return (
-    <div className={`w-full min-h-screen bg-neutral-950 text-white flex flex-col items-center justify-center ${displayMode === 'frame' ? 'p-0 sm:py-6 sm:px-4' : 'p-0'} select-none relative`}>
-      
-      {/* Top Floating Viewport Control Bar */}
-      <div className="fixed top-3 left-3 right-3 sm:left-auto sm:right-4 z-50 flex items-center justify-between sm:justify-end gap-2 pointer-events-auto">
-        <div className="flex items-center gap-1.5 bg-neutral-900/90 border border-neutral-700/80 px-2.5 py-1.5 rounded-full shadow-2xl backdrop-blur-md text-[11px] font-bold">
-          <span className="text-amber-400">📱 Mobile Mode:</span>
-          <button
-            type="button"
-            onClick={() => setDisplayMode(displayMode === 'frame' ? 'fullscreen' : 'frame')}
-            className={`px-2 py-0.5 rounded-full transition-colors ${
-              displayMode === 'frame' ? 'bg-amber-500 text-neutral-950' : 'text-neutral-400 hover:text-white'
-            }`}
-          >
-            {displayMode === 'frame' ? 'Phone Bezel' : 'Edge-to-Edge'}
-          </button>
-        </div>
-
-        {onSwitchToWeb && (
-          <button
-            type="button"
-            onClick={onSwitchToWeb}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-neutral-900/90 hover:bg-neutral-800 text-emerald-400 border border-emerald-500/40 text-xs font-bold shadow-2xl backdrop-blur-md transition-all hover:scale-105"
-            title="Switch to Web 3-Panel Dashboard"
-          >
-            <Laptop className="w-3.5 h-3.5" />
-            <span className="hidden xs:inline">Web Dashboard</span>
-          </button>
-        )}
-      </div>
-
-      {/* Main Mobile App Container */}
-      <div 
-        className={`relative bg-neutral-950 text-white flex flex-col overflow-hidden transition-all duration-300 shadow-2xl ${
-          displayMode === 'frame'
-            ? 'w-full max-w-[430px] h-[100dvh] sm:h-[880px] sm:rounded-[48px] sm:border-[8px] sm:border-neutral-800 sm:ring-1 sm:ring-neutral-700/50'
-            : 'w-full h-[100dvh] max-w-none rounded-none border-0'
-        }`}
-      >
-        
-        {/* Native Mobile Status Bar Simulator */}
-        <div className="h-11 px-6 flex items-center justify-between text-xs text-neutral-400 font-semibold bg-neutral-950 z-30 select-none border-b border-neutral-900">
-          <span>9:41</span>
-          
-          {/* Dynamic Island / Speaker Pill */}
-          <div className="w-28 h-5 bg-black rounded-full flex items-center justify-center border border-neutral-800">
-            <div className="w-2.5 h-2.5 rounded-full bg-emerald-500/80 mr-2 animate-pulse" />
-            <span className="text-[9px] font-mono text-neutral-400">UNILORIN</span>
-          </div>
-
-          <div className="flex items-center gap-2 text-[11px] font-mono">
-            <span>5G</span>
-            <span className="text-amber-400">⚡ 98%</span>
-          </div>
-        </div>
-
-        {/* Top App Header with UNILORIN Branding, Cart, Chat & Profile */}
-        <div className="px-4 py-2.5 bg-neutral-950/95 backdrop-blur-md border-b border-neutral-800/80 flex items-center justify-between z-20">
+    <div className="w-full min-h-screen h-[100dvh] bg-neutral-950 text-white flex flex-col select-none relative overflow-hidden">
+      {/* Top App Header */}
+      <header className="w-full bg-neutral-950/95 backdrop-blur-md border-b border-neutral-800/80 z-20 shrink-0">
+        <div className="max-w-4xl mx-auto px-4 py-2.5 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <div className="w-9 h-9 rounded-2xl bg-gradient-to-br from-amber-500 to-amber-700 text-neutral-950 font-black flex items-center justify-center text-sm shadow-md shadow-amber-500/20">
               CF
             </div>
             <div>
-              <div className="flex items-center gap-1.5">
-                <h1 className="text-sm font-extrabold text-white tracking-tight">CampusFoundry</h1>
-                <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-400 font-bold uppercase tracking-wider border border-amber-500/30">
-                  Mobile
-                </span>
-              </div>
-              <p className="text-[10px] text-neutral-400 font-mono flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                SQLite WatermelonDB Sync
-              </p>
+              <h1 className="text-sm font-extrabold text-white tracking-tight">CampusFoundry</h1>
+              <p className="text-[10px] text-neutral-400 font-medium">University of Ilorin</p>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
+            {onSwitchToWeb && (
+              <button
+                type="button"
+                onClick={onSwitchToWeb}
+                className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-neutral-300 hover:text-white border border-neutral-800 text-xs font-semibold transition-colors"
+                title="Switch to Web Dashboard"
+              >
+                <Laptop className="w-3.5 h-3.5 text-neutral-400" />
+                <span>Web Dashboard</span>
+              </button>
+            )}
             {/* Cart Drawer Trigger with Badge */}
             <button
               type="button"
@@ -371,7 +327,7 @@ export const RootNavigator: React.FC<RootNavigatorProps> = ({
             ) : (
               <button
                 type="button"
-                onClick={() => setShowInstitutionalAuth(true)}
+                onClick={() => onOpenAuth('signin')}
                 className="text-xs px-2.5 py-1 bg-amber-500 hover:bg-amber-400 text-neutral-950 font-bold rounded-xl shadow-md transition-all active:scale-95"
               >
                 Sign In
@@ -379,10 +335,12 @@ export const RootNavigator: React.FC<RootNavigatorProps> = ({
             )}
           </div>
         </div>
+      </header>
 
-        {/* Stories / Status Bar (Shown on Feed Tab) */}
-        {activeTab === 'feed' && (
-          <div className="py-2 px-3 bg-neutral-900/40 border-b border-neutral-800/80 overflow-x-auto no-scrollbar flex items-center gap-3 z-10 shrink-0">
+      {/* Stories / Status Bar (Shown on Feed Tab) */}
+      {activeTab === 'feed' && (
+        <div className="w-full bg-neutral-900/40 border-b border-neutral-800/80 shrink-0">
+          <div className="max-w-4xl mx-auto py-2 px-4 overflow-x-auto no-scrollbar flex items-center gap-3">
             {/* Add 24h Snap Button */}
             <div
               className="flex flex-col items-center gap-1 cursor-pointer min-w-[62px]"
@@ -402,29 +360,37 @@ export const RootNavigator: React.FC<RootNavigatorProps> = ({
             </div>
 
             {/* Active Campus Snaps list */}
-            {snaps.map((snap) => (
-              <div
-                key={snap.id}
-                className="flex flex-col items-center gap-1 cursor-pointer min-w-[62px] active:scale-95 transition-transform"
-                onClick={() => onSelectSnap(snap)}
-              >
-                <div className="w-14 h-14 rounded-full p-0.5 bg-gradient-to-tr from-amber-500 via-rose-500 to-indigo-500 shadow-sm">
-                  <img
-                    src={snap.authorAvatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100'}
-                    alt={snap.authorName}
-                    className="w-full h-full rounded-full object-cover border-2 border-neutral-950"
-                  />
-                </div>
-                <span className="text-[10px] text-neutral-300 truncate max-w-[60px]">
-                  {snap.authorUsername?.replace('@', '') || snap.authorName}
-                </span>
+            {snaps.length === 0 ? (
+              <div className="flex items-center text-[11px] text-neutral-500 italic px-2">
+                Nothing here yet
               </div>
-            ))}
+            ) : (
+              snaps.map((snap) => (
+                <div
+                  key={snap.id}
+                  className="flex flex-col items-center gap-1 cursor-pointer min-w-[62px] active:scale-95 transition-transform"
+                  onClick={() => onSelectSnap(snap)}
+                >
+                  <div className="w-14 h-14 rounded-full p-0.5 bg-gradient-to-tr from-amber-500 via-rose-500 to-indigo-500 shadow-sm">
+                    <img
+                      src={snap.authorAvatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100'}
+                      alt={snap.authorName}
+                      className="w-full h-full rounded-full object-cover border-2 border-neutral-950"
+                    />
+                  </div>
+                  <span className="text-[10px] text-neutral-300 truncate max-w-[60px]">
+                    {snap.authorUsername?.replace('@', '') || snap.authorName}
+                  </span>
+                </div>
+              ))
+            )}
           </div>
-        )}
+        </div>
+      )}
 
-        {/* MAIN MOBILE SCREEN BODY */}
-        <div className="flex-1 overflow-y-auto no-scrollbar bg-neutral-950 p-3 space-y-3 pb-24">
+      {/* MAIN SCREEN BODY */}
+      <div className="flex-1 overflow-y-auto no-scrollbar bg-neutral-950 pb-24 w-full">
+        <div className="max-w-4xl mx-auto p-3 sm:p-4 space-y-3">
           
           {/* ========================================================== */}
           {/* TAB 1: 📰 CAMPUS FEED                                      */}
@@ -432,35 +398,17 @@ export const RootNavigator: React.FC<RootNavigatorProps> = ({
           {activeTab === 'feed' && (
             <div className="space-y-3 animate-in fade-in duration-200">
               
-              {/* Level Filter Horizontal Bar */}
-              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-1">
-                {(['All', '100L', '200L', '300L', '400L', '500L'] as const).map((lvl) => (
-                  <button
-                    key={lvl}
-                    type="button"
-                    onClick={() => onSelectLevel(lvl)}
-                    className={`px-3 py-1 rounded-full text-xs font-bold whitespace-nowrap transition-all ${
-                      selectedLevel === lvl
-                        ? 'bg-amber-500 text-neutral-950 shadow-md shadow-amber-500/20'
-                        : 'bg-neutral-900 text-neutral-400 border border-neutral-800 hover:text-white'
-                    }`}
-                  >
-                    {lvl}
-                  </button>
-                ))}
-              </div>
-
-              {/* Feed Topic Chips */}
-              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+              {/* Single Row of Feed Category Filters */}
+              <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
                 {FEED_CATEGORIES.map((cat) => (
                   <button
                     key={cat}
                     type="button"
                     onClick={() => setFeedCategory(cat)}
-                    className={`px-2.5 py-1 rounded-xl text-[11px] font-semibold whitespace-nowrap transition-colors ${
+                    className={`min-h-[44px] px-4 py-2.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer border shrink-0 ${
                       feedCategory === cat
-                        ? 'bg-neutral-800 text-amber-400 border border-amber-500/40'
-                        : 'bg-neutral-900/60 text-neutral-400 hover:text-white'
+                        ? 'bg-neutral-800 text-orange-400 border-orange-500/40 font-bold'
+                        : 'bg-neutral-900/80 text-neutral-300 border-neutral-800 hover:text-white'
                     }`}
                   >
                     {cat}
@@ -488,7 +436,7 @@ export const RootNavigator: React.FC<RootNavigatorProps> = ({
               {filteredPosts.length === 0 ? (
                 <div className="text-center py-12 px-4 bg-neutral-900/50 rounded-2xl border border-neutral-800">
                   <Sparkles className="w-8 h-8 text-amber-400 mx-auto mb-2" />
-                  <h4 className="text-sm font-bold text-white">No buzz found for {selectedLevel}</h4>
+                  <h4 className="text-sm font-bold text-white">Nothing here yet</h4>
                   <p className="text-xs text-neutral-400 mt-1 mb-4">Be the first student to drop an update or course gist!</p>
                   <button
                     type="button"
@@ -509,6 +457,7 @@ export const RootNavigator: React.FC<RootNavigatorProps> = ({
                     onDeletePost={onDeletePost}
                     allBusinesses={businesses}
                     onOpenAuthorProfile={onViewUserProfile}
+                    onRequireAuth={(action) => onOpenAuth('signin')}
                   />
                 ))
               )}
@@ -522,23 +471,58 @@ export const RootNavigator: React.FC<RootNavigatorProps> = ({
             <div className="space-y-3 animate-in fade-in duration-200">
               
               {/* Marketplace Header Banner */}
-              <div className="p-3.5 bg-gradient-to-r from-amber-500/20 via-orange-500/10 to-neutral-900 border border-amber-500/30 rounded-2xl flex items-center justify-between">
-                <div>
-                  <h3 className="text-xs font-extrabold text-amber-300">UNILORIN Student Marketplace</h3>
-                  <p className="text-[10px] text-neutral-300 mt-0.5">
+              <div className="p-3.5 bg-gradient-to-r from-amber-500/20 via-orange-500/10 to-neutral-900 border border-amber-500/30 rounded-2xl flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <h3 className="text-xs font-extrabold text-amber-300 truncate">UNILORIN Student Marketplace</h3>
+                  <p className="text-[10px] text-neutral-300 mt-0.5 line-clamp-1">
                     Order directly from verified student traders across Sanrab, Tanke & PS.
                   </p>
                 </div>
-                {onOpenBecomeTrader && (
+                {userOwnedBusinesses.length > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedMyStore(userOwnedBusinesses[0])}
+                    className="px-2.5 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-neutral-950 font-bold rounded-xl text-[10px] shadow-sm whitespace-nowrap flex items-center gap-1 shrink-0 cursor-pointer"
+                  >
+                    <Store className="w-3.5 h-3.5" />
+                    <span>My Store</span>
+                  </button>
+                ) : onOpenBecomeTrader ? (
                   <button
                     type="button"
                     onClick={onOpenBecomeTrader}
-                    className="px-2.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-neutral-950 font-bold rounded-xl text-[10px] shadow-sm whitespace-nowrap"
+                    className="px-2.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-neutral-950 font-bold rounded-xl text-[10px] shadow-sm whitespace-nowrap shrink-0 cursor-pointer"
                   >
                     Become Trader
                   </button>
-                )}
+                ) : null}
               </div>
+
+              {/* My Store Quick Actions Banner (if owner) */}
+              {userOwnedBusinesses.length > 0 && (
+                <div className="p-3 bg-gradient-to-r from-emerald-950/40 via-neutral-900 to-neutral-900 border border-emerald-500/30 rounded-2xl flex items-center justify-between gap-3 shadow-md">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-8 h-8 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 flex items-center justify-center shrink-0">
+                      <Store className="w-4 h-4" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider">Your Venture</span>
+                        <span className="text-[9px] bg-emerald-500/10 text-emerald-300 px-1.5 py-0.2 rounded border border-emerald-500/30 font-medium">Owner</span>
+                      </div>
+                      <h4 className="text-xs font-bold text-white truncate">{userOwnedBusinesses[0].name}</h4>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedMyStore(userOwnedBusinesses[0])}
+                    className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-neutral-950 font-bold rounded-xl text-[11px] shrink-0 flex items-center gap-1 shadow-sm transition-colors cursor-pointer"
+                  >
+                    <Plus className="w-3 h-3" />
+                    <span>Manage Products</span>
+                  </button>
+                </div>
+              )}
 
               {/* Search Bar */}
               <div className="relative">
@@ -561,35 +545,33 @@ export const RootNavigator: React.FC<RootNavigatorProps> = ({
                 )}
               </div>
 
-              {/* Campus Location Filter Pills */}
-              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
-                {CAMPUS_ZONES.map((zone) => (
-                  <button
-                    key={zone}
-                    type="button"
-                    onClick={() => setMarketCampus(zone)}
-                    className={`px-2.5 py-1 rounded-full text-[10px] font-bold whitespace-nowrap transition-colors ${
-                      marketCampus === zone
-                        ? 'bg-amber-500 text-neutral-950'
-                        : 'bg-neutral-900 text-neutral-400 border border-neutral-800'
-                    }`}
-                  >
-                    {zone}
-                  </button>
-                ))}
-              </div>
+              {/* Merged Single Filter Row: Zone Filters Button + Category Chips */}
+              <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
+                {/* Filters Button for Campus Zone Bottom Sheet */}
+                <button
+                  type="button"
+                  onClick={() => setIsZoneFilterSheetOpen(true)}
+                  className={`min-h-[44px] flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-all shrink-0 cursor-pointer ${
+                    marketCampus !== 'All'
+                      ? 'border-orange-500/50 bg-orange-500/10 text-orange-400'
+                      : 'border-neutral-800 bg-neutral-900 text-neutral-300 hover:text-white'
+                  }`}
+                  title="Filter by Campus Zone"
+                >
+                  <Filter className="h-4 w-4 text-orange-400" />
+                  <span>{marketCampus !== 'All' ? marketCampus.split(' ')[0] : 'Filters'}</span>
+                </button>
 
-              {/* Category Filter Pills */}
-              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+                {/* Category Chips */}
                 {MARKET_CATEGORIES.map((cat) => (
                   <button
                     key={cat}
                     type="button"
                     onClick={() => setMarketCategory(cat)}
-                    className={`px-2.5 py-1 rounded-xl text-[11px] font-semibold whitespace-nowrap transition-colors ${
+                    className={`min-h-[44px] px-3.5 py-2.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer border shrink-0 ${
                       marketCategory === cat
-                        ? 'bg-neutral-800 text-amber-400 border border-amber-500/40'
-                        : 'bg-neutral-900/60 text-neutral-400'
+                        ? 'bg-neutral-800 text-orange-400 border-orange-500/40 font-bold'
+                        : 'bg-neutral-900/80 text-neutral-300 border-neutral-800 hover:text-white'
                     }`}
                   >
                     {cat}
@@ -597,22 +579,76 @@ export const RootNavigator: React.FC<RootNavigatorProps> = ({
                 ))}
               </div>
 
-              {/* Business Cards Grid */}
-              {filteredBusinesses.length === 0 ? (
+              {/* Business Cards 2-Column Grid / States */}
+              {isLoadingBusinesses && businesses.length === 0 ? (
+                /* Loading Skeletons in 2-Column Grid */
+                <div className="grid grid-cols-2 gap-3">
+                  {[1, 2, 3, 4].map((i) => (
+                    <div
+                      key={i}
+                      className="rounded-2xl border border-neutral-800 bg-neutral-900/60 p-3 space-y-2.5 animate-pulse"
+                    >
+                      <div className="w-full aspect-square rounded-xl bg-neutral-800" />
+                      <div className="h-3.5 w-3/4 rounded-md bg-neutral-800" />
+                      <div className="h-4 w-1/2 rounded-md bg-neutral-800" />
+                      <div className="pt-2 border-t border-neutral-800/80 flex items-center justify-between">
+                        <div className="h-3 w-1/3 rounded bg-neutral-800" />
+                        <div className="h-3 w-8 rounded bg-neutral-800" />
+                      </div>
+                      <div className="h-11 w-full rounded-xl bg-neutral-800" />
+                    </div>
+                  ))}
+                </div>
+              ) : businessesError && businesses.length === 0 ? (
+                /* Error State with Retry Button */
                 <div className="text-center py-12 px-4 bg-neutral-900/50 rounded-2xl border border-neutral-800">
-                  <Store className="w-8 h-8 text-amber-400 mx-auto mb-2" />
+                  <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-rose-500/10 text-rose-400 border border-rose-500/20 mb-3">
+                    <AlertCircle className="w-6 h-6" />
+                  </div>
+                  <h4 className="text-sm font-bold text-white">Unable to load campus traders</h4>
+                  <p className="text-xs text-neutral-400 mt-1 mb-4">Please check your connection and try again.</p>
+                  <button
+                    type="button"
+                    onClick={onRetryBusinesses}
+                    className="min-h-[44px] px-5 py-2.5 bg-neutral-800 hover:bg-neutral-700 text-white font-bold rounded-xl text-xs cursor-pointer border border-neutral-700 transition-colors inline-flex items-center gap-1.5"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>Retry</span>
+                  </button>
+                </div>
+              ) : businesses.length === 0 ? (
+                /* Empty State: No traders yet. Be the first to open a store */
+                <div className="text-center py-12 px-4 bg-neutral-900/50 rounded-2xl border border-neutral-800">
+                  <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-orange-500/10 text-orange-400 border border-orange-500/20 mb-3">
+                    <Store className="w-6 h-6" />
+                  </div>
+                  <h4 className="text-sm font-bold text-white">No traders yet. Be the first to open a store</h4>
+                  <p className="text-xs text-neutral-400 mt-1 mb-4">Register your hostel bakes, tech repair, dorm styling, or campus brand today.</p>
+                  <button
+                    type="button"
+                    onClick={onOpenBecomeTrader || onOpenCreateBusiness}
+                    className="min-h-[44px] px-5 py-2.5 bg-orange-500 hover:bg-orange-400 text-neutral-950 font-bold rounded-xl text-xs cursor-pointer transition-colors shadow-md"
+                  >
+                    Become a Trader
+                  </button>
+                </div>
+              ) : filteredBusinesses.length === 0 ? (
+                /* Filtered Search Empty State */
+                <div className="text-center py-12 px-4 bg-neutral-900/50 rounded-2xl border border-neutral-800">
+                  <Store className="w-8 h-8 text-neutral-500 mx-auto mb-2" />
                   <h4 className="text-sm font-bold text-white">No trades found</h4>
                   <p className="text-xs text-neutral-400 mt-1 mb-4">Try clearing filters or search query.</p>
                   <button
                     type="button"
-                    onClick={onOpenCreateBusiness}
-                    className="px-4 py-2 bg-amber-500 text-neutral-950 font-bold rounded-xl text-xs"
+                    onClick={() => { setMarketCategory('All'); setMarketCampus('All'); setMarketSearch(''); }}
+                    className="min-h-[44px] px-4 py-2.5 bg-neutral-800 hover:bg-neutral-700 text-white font-bold rounded-xl text-xs cursor-pointer transition-colors"
                   >
-                    + Register Your Student Trade
+                    Clear Filters
                   </button>
                 </div>
               ) : (
-                <div className="space-y-3">
+                /* 2-Column Grid */
+                <div className="grid grid-cols-2 gap-3">
                   {filteredBusinesses.map((biz) => (
                     <BusinessCard
                       key={biz.id}
@@ -630,73 +666,154 @@ export const RootNavigator: React.FC<RootNavigatorProps> = ({
           {/* TAB 3: 🏛️ CAMPUS LIFE HUB                                 */}
           {/* ========================================================== */}
           {activeTab === 'campus' && (
-            <div className="space-y-3 animate-in fade-in duration-200">
+            <div className="space-y-4 animate-in fade-in duration-200">
               
-              {/* Campus Life Segmented Sub-Navigation Bar */}
-              <div className="flex bg-neutral-900 p-1 rounded-2xl border border-neutral-800 overflow-x-auto no-scrollbar gap-1">
-                {[
-                  { id: 'politics' as CampusSubHub, label: 'SUG & Votes', icon: '🗳️' },
-                  { id: 'academics' as CampusSubHub, label: 'Academics', icon: '📚' },
-                  { id: 'clubs' as CampusSubHub, label: 'Clubs', icon: '🚀' },
-                  { id: 'news' as CampusSubHub, label: 'News', icon: '📢' },
-                  { id: 'map' as CampusSubHub, label: 'Campus Map', icon: '🗺️' },
-                ].map((hub) => (
-                  <button
-                    key={hub.id}
-                    type="button"
-                    onClick={() => setActiveCampusSubHub(hub.id)}
-                    className={`flex-1 py-1.5 px-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center justify-center gap-1 ${
-                      activeCampusSubHub === hub.id
-                        ? 'bg-amber-500 text-neutral-950 shadow-md'
-                        : 'text-neutral-400 hover:text-white'
-                    }`}
-                  >
-                    <span>{hub.icon}</span>
-                    <span>{hub.label}</span>
-                  </button>
-                ))}
-              </div>
+              {activeCampusSubHub === null ? (
+                /* Hubs Landing Screen - 2x3 Grid */
+                <div className="space-y-4">
+                  <div className="p-4 bg-gradient-to-r from-neutral-900 via-neutral-900 to-orange-950/40 border border-neutral-800 rounded-3xl">
+                    <h2 className="text-base font-extrabold text-white">Campus Life Hubs</h2>
+                    <p className="text-xs text-neutral-300 mt-1">
+                      Student politics, academic resources, clubs, news bulletins & interactive map.
+                    </p>
+                  </div>
 
-              {/* Sub-Hub Content */}
-              {activeCampusSubHub === 'politics' && (
-                <div className="space-y-3">
-                  <PoliticsCampaignView
-                    onRequireAuth={() => onOpenAuth('signin')}
-                    onShowToast={showToast}
-                  />
+                  {/* 2x3 Grid of Icon Tiles */}
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3.5">
+                    {[
+                      {
+                        id: 'politics' as CampusSubHub,
+                        icon: Vote,
+                        label: 'SUG Politics & Votes',
+                        subtitle: 'Campaign manifestos & live voting',
+                        color: 'text-purple-400 bg-purple-500/10 border-purple-500/20',
+                      },
+                      {
+                        id: 'academics' as CampusSubHub,
+                        icon: BookOpen,
+                        label: 'Academic Hub',
+                        subtitle: 'Faculties, past Qs & course outlines',
+                        color: 'text-sky-400 bg-sky-500/10 border-sky-500/20',
+                      },
+                      {
+                        id: 'clubs' as CampusSubHub,
+                        icon: Users,
+                        label: 'Clubs & Tech Hubs',
+                        subtitle: 'Tech, sports & student societies',
+                        color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20',
+                      },
+                      {
+                        id: 'news' as CampusSubHub,
+                        icon: Newspaper,
+                        label: 'Campus News',
+                        subtitle: 'Official UNILORIN memos & press',
+                        color: 'text-amber-400 bg-amber-500/10 border-amber-500/20',
+                      },
+                      {
+                        id: 'map' as CampusSubHub,
+                        icon: Compass,
+                        label: 'Landmarks & Transit',
+                        subtitle: 'Places, shuttle routes and fares',
+                        color: 'text-orange-400 bg-orange-500/10 border-orange-500/20',
+                      },
+                      {
+                        id: 'idcard' as CampusSubHub,
+                        icon: ShieldCheck,
+                        label: 'Digital ID Pass',
+                        subtitle: 'UNILORIN verified student badge',
+                        color: 'text-rose-400 bg-rose-500/10 border-rose-500/20',
+                      },
+                    ].map((tile) => {
+                      const IconComponent = tile.icon;
+                      return (
+                        <button
+                          key={tile.id}
+                          type="button"
+                          onClick={() => {
+                            if (tile.id === 'idcard') {
+                              setActiveTab('profile');
+                            } else {
+                              setActiveCampusSubHub(tile.id);
+                            }
+                          }}
+                          className="group relative min-h-[110px] p-4 rounded-2xl border border-neutral-800 bg-neutral-900/90 hover:bg-neutral-800 hover:border-orange-500/50 transition-all flex flex-col justify-between cursor-pointer shadow-lg text-left active:scale-95"
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className={`flex h-10 w-10 items-center justify-center rounded-xl border ${tile.color}`}>
+                              <IconComponent className="h-5 w-5" />
+                            </div>
+                            <ChevronRight className="h-4 w-4 text-neutral-500 group-hover:text-orange-400 transition-colors" />
+                          </div>
+
+                          <div className="mt-3">
+                            <h3 className="text-xs sm:text-sm font-bold text-white group-hover:text-orange-400 transition-colors line-clamp-1">
+                              {tile.label}
+                            </h3>
+                            <p className="text-[11px] text-neutral-300 line-clamp-1 mt-0.5">
+                              {tile.subtitle}
+                            </p>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : (
+                /* Sub-Section View with Back Arrow in Header */
+                <div className="space-y-4">
+                  {/* Header with Back Arrow */}
+                  <div className="flex items-center justify-between pb-2 border-b border-neutral-800">
+                    <button
+                      type="button"
+                      onClick={() => setActiveCampusSubHub(null)}
+                      className="min-h-[44px] min-w-[44px] flex items-center gap-2 px-3 py-2 rounded-xl bg-neutral-900 border border-neutral-800 text-neutral-200 hover:text-white hover:bg-neutral-800 font-bold text-xs cursor-pointer transition-all"
+                    >
+                      <ArrowLeft className="h-4 w-4 text-orange-400" />
+                      <span>Back to Hubs</span>
+                    </button>
+
+                    <span className="text-xs font-bold text-neutral-300 uppercase tracking-wider font-mono">
+                      {activeCampusSubHub === 'politics' && 'SUG Politics'}
+                      {activeCampusSubHub === 'academics' && 'Academics'}
+                      {activeCampusSubHub === 'clubs' && 'Clubs & Societies'}
+                      {activeCampusSubHub === 'news' && 'Campus Memos'}
+                      {activeCampusSubHub === 'map' && 'Landmarks & Transit'}
+                    </span>
+                  </div>
+
+                  {/* Active Section Content */}
+                  {activeCampusSubHub === 'politics' && (
+                    <PoliticsCampaignView
+                      onRequireAuth={() => onOpenAuth('signin')}
+                      onShowToast={showToast}
+                    />
+                  )}
+
+                  {activeCampusSubHub === 'academics' && (
+                    <FacultiesDeptsView
+                      selectedLevel={selectedLevel}
+                      onSelectLevel={onSelectLevel}
+                      onShowToast={showToast}
+                    />
+                  )}
+
+                  {activeCampusSubHub === 'clubs' && (
+                    <ClubsDirectoryView
+                      onRequireAuth={() => onOpenAuth('signin')}
+                      onShowToast={showToast}
+                    />
+                  )}
+
+                  {activeCampusSubHub === 'news' && (
+                    <CampusNewsView onShowToast={showToast} />
+                  )}
+
+                  {activeCampusSubHub === 'map' && (
+                    <CampusMapView />
+                  )}
                 </div>
               )}
 
-              {activeCampusSubHub === 'academics' && (
-                <div className="space-y-3">
-                  <FacultiesDeptsView
-                    selectedLevel={selectedLevel}
-                    onSelectLevel={onSelectLevel}
-                    onShowToast={showToast}
-                  />
-                </div>
-              )}
-
-              {activeCampusSubHub === 'clubs' && (
-                <div className="space-y-3">
-                  <ClubsDirectoryView
-                    onRequireAuth={() => onOpenAuth('signin')}
-                    onShowToast={showToast}
-                  />
-                </div>
-              )}
-
-              {activeCampusSubHub === 'news' && (
-                <div className="space-y-3">
-                  <CampusNewsView onShowToast={showToast} />
-                </div>
-              )}
-
-              {activeCampusSubHub === 'map' && (
-                <div className="space-y-3">
-                  <CampusMapView />
-                </div>
-              )}
             </div>
           )}
 
@@ -706,21 +823,21 @@ export const RootNavigator: React.FC<RootNavigatorProps> = ({
           {activeTab === 'chats' && (
             <div className="space-y-3 animate-in fade-in duration-200">
               
-              {/* Security & Offline Banner */}
-              <div className="p-3 bg-neutral-900 border border-neutral-800 rounded-2xl flex items-center justify-between">
+              {/* Chats Header with subtle lock indicator */}
+              <div className="flex items-center justify-between px-1 py-1">
                 <div className="flex items-center gap-2">
-                  <span className="text-emerald-400">🔒</span>
-                  <div>
-                    <h4 className="text-xs font-bold text-white">End-to-End Encrypted</h4>
-                    <p className="text-[10px] text-neutral-400">Offline replies synced to WatermelonDB SQLite</p>
-                  </div>
+                  <h3 className="text-sm font-bold text-white">Direct Messages</h3>
+                  <span title="End-to-End Encrypted" className="text-emerald-400 flex items-center">
+                    <Lock className="w-3.5 h-3.5" />
+                  </span>
                 </div>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-mono">
+                <span className="flex items-center gap-1.5 text-[10px] text-neutral-400 font-mono">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
                   Online
                 </span>
               </div>
 
-              {/* Filter Tabs: Direct Messages vs Instagram-style Message Requests */}
+              {/* Filter Tabs: Direct Messages vs Message Requests */}
               <div className="flex bg-neutral-900 p-1 rounded-xl border border-neutral-800">
                 <button
                   type="button"
@@ -729,7 +846,7 @@ export const RootNavigator: React.FC<RootNavigatorProps> = ({
                     chatFilter === 'all' ? 'bg-amber-500 text-neutral-950' : 'text-neutral-400'
                   }`}
                 >
-                  Direct Chats ({conversations.length || 3})
+                  Direct Chats ({conversations.length})
                 </button>
                 <button
                   type="button"
@@ -739,317 +856,173 @@ export const RootNavigator: React.FC<RootNavigatorProps> = ({
                   }`}
                 >
                   <span>Requests</span>
-                  <span className="w-4 h-4 rounded-full bg-amber-400 text-neutral-950 text-[10px] flex items-center justify-center">
-                    {pendingRequestsCount || 1}
-                  </span>
+                  {pendingRequestsCount > 0 && (
+                    <span className="w-4 h-4 rounded-full bg-amber-400 text-neutral-950 text-[10px] flex items-center justify-center font-bold">
+                      {pendingRequestsCount}
+                    </span>
+                  )}
                 </button>
               </div>
 
-              {/* Departmental & Club Broadcast Channels (Telegram Mode) */}
-              <div className="space-y-2">
-                <div className="text-[11px] font-bold text-neutral-400 px-1 uppercase tracking-wider">
-                  📢 Faculty & Department Channels
-                </div>
-                {[
-                  {
-                    id: 'comm_cis',
-                    name: 'Faculty of CIS Official',
-                    members: '1,420 students',
-                    avatar: 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?w=100',
-                    lastMessage: 'Mid-semester CBT testing schedule updated on student portal.',
-                    time: '12:45 PM',
-                    unread: 2,
-                  },
-                  {
-                    id: 'comm_tech',
-                    name: 'UNILORIN Tech Innovators Club',
-                    members: '542 builders',
-                    avatar: 'https://images.unsplash.com/photo-1531482615713-2afd69097998?w=100',
-                    lastMessage: 'Campus Hackathon registration closes this Friday at 11:59 PM.',
-                    time: '10:20 AM',
-                    unread: 0,
-                  },
-                ].map((channel) => (
-                  <div
-                    key={channel.id}
-                    onClick={() =>
-                      setActiveChatTarget({
-                        chatType: 'channel',
-                        recipient: {
-                          id: channel.id,
-                          name: channel.name,
-                          handle: `@${channel.id}`,
-                          avatarUrl: channel.avatar,
-                          department: 'CIS',
-                          online: true,
-                          isAcceptedContact: true,
-                        },
-                      })
-                    }
-                    className="p-3 bg-neutral-900 border border-neutral-800 rounded-2xl flex items-center justify-between cursor-pointer hover:border-neutral-700 transition-colors"
-                  >
-                    <div className="flex items-center gap-2.5">
-                      <img src={channel.avatar} alt={channel.name} className="w-10 h-10 rounded-2xl object-cover" />
-                      <div>
-                        <h4 className="text-xs font-bold text-white">{channel.name}</h4>
-                        <p className="text-[11px] text-neutral-400 truncate max-w-[190px]">{channel.lastMessage}</p>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <span className="text-[10px] text-neutral-500">{channel.time}</span>
-                      {channel.unread > 0 && (
-                        <div className="w-4 h-4 bg-amber-500 text-neutral-950 font-bold rounded-full flex items-center justify-center text-[9px] ml-auto mt-1">
-                          {channel.unread}
-                        </div>
-                      )}
-                    </div>
+              {/* 1. Marketplace In-App Order Conversations */}
+              {marketplaceConversations.length > 0 && (
+                <div className="space-y-2 pt-1">
+                  <div className="text-[11px] font-bold text-neutral-400 px-1 uppercase tracking-wider flex items-center gap-1.5">
+                    <Store className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Marketplace Trades & Orders</span>
                   </div>
-                ))}
-              </div>
+                  {marketplaceConversations
+                    .filter((m) => m.buyerId !== m.traderId && !(currentUser && m.buyerId === currentUser.id && m.traderId === currentUser.id))
+                    .map((mConv) => {
+                    const isBuyer = mConv.buyerId === currentUser?.id;
+                    const otherPartyName = isBuyer 
+                      ? (mConv.businessName || 'Campus Store')
+                      : (mConv.buyerName || 'Buyer');
+                    const unread = isBuyer ? mConv.buyerUnread : mConv.traderUnread;
+                    const isDeclinedOrBlocked = mConv.status === 'declined' || mConv.status === 'blocked';
 
-              {/* Student Direct Messaging List */}
-              <div className="space-y-2 pt-2">
+                    return (
+                      <div
+                        key={mConv.id}
+                        onClick={() => openMarketplaceChat(mConv.id)}
+                        className="p-3 bg-neutral-900 border border-neutral-800 rounded-2xl flex items-center justify-between cursor-pointer hover:border-neutral-700 transition-colors"
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className="w-10 h-10 rounded-2xl bg-neutral-800 border border-neutral-700 flex items-center justify-center text-amber-400 shrink-0 font-bold text-sm">
+                            {otherPartyName.charAt(0).toUpperCase()}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5">
+                              <h4 className="text-xs font-bold text-white truncate">{otherPartyName}</h4>
+                              <span className={`text-[9px] px-1.5 py-0.2 rounded font-mono uppercase ${
+                                isDeclinedOrBlocked 
+                                  ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30' 
+                                  : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                              }`}>
+                                {mConv.status}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-neutral-400 truncate max-w-[210px]">
+                              {mConv.lastMessage || 'Order conversation opened'}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <span className="text-[10px] text-neutral-500">
+                            {mConv.lastMessageAt 
+                              ? new Date(mConv.lastMessageAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                              : ''}
+                          </span>
+                          {unread > 0 && (
+                            <div className="w-4 h-4 bg-amber-500 text-neutral-950 font-bold rounded-full flex items-center justify-center text-[9px] ml-auto mt-1">
+                              {unread}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* 2. Direct Conversations List */}
+              <div className="space-y-2 pt-1">
                 <div className="text-[11px] font-bold text-neutral-400 px-1 uppercase tracking-wider">
                   💬 Direct Conversations
                 </div>
-                {[
-                  {
-                    id: 'c_ibrahim',
-                    name: 'Ibrahim Adebayo',
-                    handle: '@ibrahim_cs',
-                    avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100',
-                    lastMessage: 'Are we still meeting at the University Library by 4 PM?',
-                    time: '11:15 AM',
-                    unread: 0,
-                    isAccepted: true,
-                    online: true,
-                  },
-                  {
-                    id: 'c_zainab',
-                    name: 'Zainab Bakes (Sanrab Hub)',
-                    handle: '@zainab_bakes',
-                    avatarUrl: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=100',
-                    lastMessage: 'Your pastry box is ready for pickup at Sanrab Gate!',
-                    time: 'Yesterday',
-                    unread: 1,
-                    isAccepted: true,
-                    online: false,
-                  },
-                  {
-                    id: 'c_chiamaka',
-                    name: 'Chiamaka (Economics 200L)',
-                    handle: '@chiamaka_econs',
-                    avatarUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100',
-                    lastMessage: 'Message Request: Hello! Do you have the past questions for ECO 201?',
-                    time: '2h ago',
-                    unread: 1,
-                    isAccepted: false,
-                    online: false,
-                  },
-                ]
-                  .filter((c) => (chatFilter === 'requests' ? !c.isAccepted : c.isAccepted))
-                  .map((chat) => (
-                    <div
-                      key={chat.id}
-                      onClick={() =>
-                        setActiveChatTarget({
-                          chatType: 'direct',
-                          recipient: {
-                            id: chat.id,
-                            name: chat.name,
-                            handle: chat.handle,
-                            avatarUrl: chat.avatarUrl,
-                            isVerifiedStudent: true,
-                            online: chat.online,
-                            isAcceptedContact: chat.isAccepted,
-                          },
-                        })
-                      }
-                      className="p-3 bg-neutral-900 border border-neutral-800 rounded-2xl flex items-center justify-between cursor-pointer hover:border-neutral-700 transition-colors"
-                    >
-                      <div className="flex items-center gap-2.5">
-                        <div className="relative">
-                          <img src={chat.avatarUrl} alt={chat.name} className="w-10 h-10 rounded-full object-cover" />
-                          {chat.online && (
-                            <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-500 rounded-full border-2 border-neutral-900" />
+                {conversations.filter((c) => (chatFilter === 'requests' ? c.isMessageRequest : !c.isMessageRequest)).length > 0 ? (
+                  conversations
+                    .filter((c) => (chatFilter === 'requests' ? c.isMessageRequest : !c.isMessageRequest))
+                    .map((chat) => (
+                      <div
+                        key={chat.id}
+                        onClick={() =>
+                          setActiveChatTarget({
+                            chatType: 'direct',
+                            recipient: {
+                              id: chat.id,
+                              name: chat.traderName || chat.businessName,
+                              handle: `@${(chat.businessName || 'chat').toLowerCase().replace(/\s+/g, '_')}`,
+                              avatarUrl: chat.businessImageUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100',
+                              isVerifiedStudent: true,
+                              online: chat.isOnline,
+                              isAcceptedContact: !chat.isMessageRequest,
+                            },
+                          })
+                        }
+                        className="p-3 bg-neutral-900 border border-neutral-800 rounded-2xl flex items-center justify-between cursor-pointer hover:border-neutral-700 transition-colors"
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className="relative shrink-0">
+                            <img 
+                              src={chat.businessImageUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100'} 
+                              alt={chat.businessName} 
+                              className="w-10 h-10 rounded-full object-cover" 
+                            />
+                            {chat.isOnline && (
+                              <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-500 rounded-full border-2 border-neutral-900" />
+                            )}
+                          </div>
+                          <div className="min-w-0">
+                            <h4 className="text-xs font-bold text-white truncate">{chat.traderName || chat.businessName}</h4>
+                            <p className="text-[11px] text-neutral-400 truncate max-w-[210px]">{chat.lastMessage}</p>
+                          </div>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <span className="text-[10px] text-neutral-500 font-mono">
+                            {chat.lastMessageTimestamp
+                              ? new Date(chat.lastMessageTimestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                              : ''}
+                          </span>
+                          {chat.unreadCount > 0 && (
+                            <div className="w-4 h-4 bg-amber-500 text-neutral-950 font-bold rounded-full flex items-center justify-center text-[9px] ml-auto mt-1">
+                              {chat.unreadCount}
+                            </div>
                           )}
                         </div>
-                        <div>
-                          <h4 className="text-xs font-bold text-white">{chat.name}</h4>
-                          <p className="text-[11px] text-neutral-400 truncate max-w-[190px]">{chat.lastMessage}</p>
-                        </div>
                       </div>
-                      <div className="text-right">
-                        <span className="text-[10px] text-neutral-500">{chat.time}</span>
-                        {chat.unread > 0 && (
-                          <div className="w-4 h-4 bg-amber-500 text-neutral-950 font-bold rounded-full flex items-center justify-center text-[9px] ml-auto mt-1">
-                            {chat.unread}
-                          </div>
-                        )}
-                      </div>
+                    ))
+                ) : (
+                  marketplaceConversations.length === 0 && (
+                    <div className="text-center py-10 px-4 bg-neutral-900/40 rounded-2xl border border-neutral-800 space-y-2">
+                      <MessageSquare className="w-7 h-7 text-neutral-500 mx-auto" />
+                      <h4 className="text-sm font-bold text-white">Nothing here yet</h4>
+                      <p className="text-xs text-neutral-400 max-w-xs mx-auto">
+                        Your direct messages and trade enquiries will appear here once you message a trader or receive an inquiry.
+                      </p>
                     </div>
-                  ))}
+                  )
+                )}
               </div>
             </div>
           )}
 
+          {/* ========================================================== */}
           {/* ========================================================== */}
           {/* TAB 5: 🎓 STUDENT ID & FOUNDER DASHBOARD                  */}
           {/* ========================================================== */}
           {activeTab === 'profile' && (
-            <div className="space-y-3 animate-in fade-in duration-200">
-              
-              {/* UNILORIN Student ID Digital Card */}
-              <div className="bg-gradient-to-br from-neutral-900 via-neutral-900 to-amber-950/60 border border-amber-500/40 rounded-3xl p-4 shadow-xl relative overflow-hidden">
-                <div className="flex items-center justify-between border-b border-neutral-800 pb-3">
-                  <div className="flex items-center gap-2">
-                    <span className="text-lg">🏛️</span>
-                    <div>
-                      <h4 className="text-xs font-bold text-white tracking-wide">UNIVERSITY OF ILORIN</h4>
-                      <p className="text-[9px] text-amber-400 uppercase tracking-widest font-mono">Student Digital Identity</p>
-                    </div>
-                  </div>
-                  <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[10px] font-bold">
-                    ✓ Verified
-                  </span>
-                </div>
-
-                <div className="flex items-center gap-3.5 my-4">
-                  <img
-                    src={currentUser?.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200'}
-                    alt="Student"
-                    className="w-16 h-16 rounded-2xl object-cover border-2 border-amber-500 shadow-md"
-                  />
-                  <div>
-                    <h3 className="text-sm font-bold text-white">{currentUser?.fullName || 'Tunde Adeyemi'}</h3>
-                    <p className="text-xs font-mono text-amber-400 font-bold">
-                      {currentUser?.username || '21/52HA042'}
-                    </p>
-                    <p className="text-[10px] text-neutral-300 mt-0.5">
-                      {currentUser?.department || 'Computer Science'} • {currentUser?.level || '300L'}
-                    </p>
-                    <p className="text-[9px] text-neutral-400">
-                      {currentUser?.faculty || 'Faculty of Physical Sciences'}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Simulated Barcode */}
-                <div className="pt-2 border-t border-neutral-800 flex items-center justify-between text-[10px] font-mono text-neutral-400">
-                  <span>UNILORIN-SECURE-ENCLAVE</span>
-                  <span>SESSION: 2024/2025</span>
-                </div>
-              </div>
-
-              {/* Biometrics & Enclave Security */}
-              <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-3.5 space-y-3">
-                <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
-                  <Fingerprint className="w-4 h-4 text-amber-400" />
-                  <span>Native Security & Offline Enclave</span>
-                </h4>
-
-                <div className="flex items-center justify-between text-xs">
-                  <div>
-                    <p className="font-semibold text-neutral-200">Face ID / Touch ID Unlock</p>
-                    <p className="text-[10px] text-neutral-400">Instant biometric authentication</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleToggleBiometrics}
-                    className={`px-3 py-1 rounded-full text-xs font-bold border transition-colors ${
-                      isBiometricsActive
-                        ? 'bg-amber-500 text-neutral-950 border-amber-400'
-                        : 'bg-neutral-800 text-neutral-300 border-neutral-700'
-                    }`}
-                  >
-                    {isBiometricsActive ? 'Active ✓' : 'Enable'}
-                  </button>
-                </div>
-
-                <div className="flex items-center justify-between text-xs pt-2 border-t border-neutral-800">
-                  <div>
-                    <p className="font-semibold text-neutral-200">WatermelonDB Local SQLite Cache</p>
-                    <p className="text-[10px] text-neutral-400">Encrypted offline state & queued replies</p>
-                  </div>
-                  <span className="text-emerald-400 font-mono text-xs font-bold">Encrypted</span>
-                </div>
-              </div>
-
-              {/* Founder & Trader Portfolio Section */}
-              <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-3.5 space-y-3">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
-                    <Store className="w-4 h-4 text-amber-400" />
-                    <span>My Campus Trades & Ventures ({userOwnedBusinesses.length})</span>
-                  </h4>
-                  <button
-                    type="button"
-                    onClick={onOpenCreateBusiness}
-                    className="text-[10px] px-2 py-0.5 rounded-lg bg-amber-500/20 text-amber-400 border border-amber-500/30 font-bold"
-                  >
-                    + Add Listing
-                  </button>
-                </div>
-
-                {userOwnedBusinesses.length === 0 ? (
-                  <p className="text-xs text-neutral-400 py-2">
-                    You haven't listed any student trade yet. Turn your skill or hustle into a verified campus venture!
-                  </p>
-                ) : (
-                  <div className="space-y-2">
-                    {userOwnedBusinesses.map((biz) => (
-                      <div
-                        key={biz.id}
-                        className="p-2.5 bg-neutral-950 border border-neutral-800 rounded-xl flex items-center justify-between"
-                      >
-                        <div className="flex items-center gap-2">
-                          <img src={biz.imageUrl} alt={biz.name} className="w-9 h-9 rounded-lg object-cover" />
-                          <div>
-                            <h5 className="text-xs font-bold text-white">{biz.name}</h5>
-                            <p className="text-[10px] text-neutral-400">{biz.category} • {biz.campus || biz.hostelLocation}</p>
-                          </div>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => onSelectBusiness(biz)}
-                          className="text-xs text-amber-400 font-bold"
-                        >
-                          View ➔
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Authentication Controls */}
-              {currentUser ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    signOut();
-                    showToast('Signed out of institutional profile.');
-                  }}
-                  className="w-full py-2.5 rounded-xl bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 text-xs font-bold text-rose-400 transition-colors"
-                >
-                  Sign Out of Account
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setShowInstitutionalAuth(true)}
-                  className="w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 text-xs font-bold transition-colors shadow-md"
-                >
-                  Sign In with UNILORIN Student Portal
-                </button>
-              )}
-            </div>
+            <StudentIDCard
+              currentUser={currentUser}
+              onOpenAuth={() => onOpenAuth('signin')}
+              onSignOut={() => {
+                signOut();
+                showToast('Signed out of institutional profile.');
+              }}
+              userOwnedBusinesses={userOwnedBusinesses}
+              onOpenCreateBusiness={onOpenCreateBusiness}
+              onSelectBusiness={onSelectBusiness}
+              onOpenMyStore={(biz) => setSelectedMyStore(biz)}
+            />
           )}
 
-        </div>
 
-        {/* BOTTOM TAB BAR NAVIGATION (Native Mobile Look & Feel) */}
-        <div className="absolute bottom-0 left-0 right-0 h-16 bg-neutral-950/95 backdrop-blur-md border-t border-neutral-800/80 px-2 flex items-center justify-around z-30">
+        </div>
+      </div>
+
+      {/* BOTTOM TAB BAR NAVIGATION */}
+      <nav className="fixed bottom-0 left-0 right-0 h-16 bg-neutral-950/95 backdrop-blur-md border-t border-neutral-800/80 px-2 z-30">
+        <div className="max-w-4xl mx-auto h-full flex items-center justify-around">
           
           {/* TAB 1: FEED */}
           <button
@@ -1141,6 +1114,7 @@ export const RootNavigator: React.FC<RootNavigatorProps> = ({
           </button>
 
         </div>
+      </nav>
 
         {/* MODAL: QUICK ACTION BOTTOM SHEET */}
         {isActionSheetOpen && (
@@ -1259,20 +1233,74 @@ export const RootNavigator: React.FC<RootNavigatorProps> = ({
           </div>
         )}
 
-        {/* MODAL: INSTITUTIONAL UNILORIN AUTH & BIOMETRICS */}
-        {showInstitutionalAuth && (
-          <div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
-            <UnilorinAuthModule
-              onAuthSuccess={(data) => {
-                showToast(`Welcome! Verified student account authenticated.`);
-                setShowInstitutionalAuth(false);
-              }}
-              onCancel={() => setShowInstitutionalAuth(false)}
-            />
+        {/* Campus Zone Filter Bottom Sheet Modal */}
+        {isZoneFilterSheetOpen && (
+          <div 
+            className="fixed inset-0 z-50 flex items-end justify-center bg-black/80 backdrop-blur-sm animate-in fade-in duration-200"
+            onClick={() => setIsZoneFilterSheetOpen(false)}
+          >
+            <div 
+              className="w-full max-w-lg rounded-t-3xl border-t border-neutral-800 bg-neutral-900 p-6 space-y-4 text-white shadow-2xl animate-in slide-in-from-bottom duration-200"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between pb-3 border-b border-neutral-800">
+                <div className="flex items-center gap-2">
+                  <Filter className="h-5 w-5 text-orange-400" />
+                  <h3 className="text-sm font-bold">Select Campus Zone</h3>
+                </div>
+                <button 
+                  type="button" 
+                  onClick={() => setIsZoneFilterSheetOpen(false)}
+                  className="min-h-[44px] min-w-[44px] flex items-center justify-center text-neutral-400 hover:text-white"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-1">
+                {CAMPUS_ZONES.map((zone) => {
+                  const isSelected = marketCampus === zone;
+                  return (
+                    <button
+                      key={zone}
+                      type="button"
+                      onClick={() => {
+                        setMarketCampus(zone);
+                        setIsZoneFilterSheetOpen(false);
+                      }}
+                      className={`w-full min-h-[44px] flex items-center justify-between px-4 py-3 rounded-2xl text-xs font-bold transition-all cursor-pointer border ${
+                        isSelected
+                          ? 'bg-orange-500/20 text-orange-400 border-orange-500/40'
+                          : 'bg-neutral-950 text-neutral-300 border-neutral-800 hover:bg-neutral-800'
+                      }`}
+                    >
+                      <span>{zone}</span>
+                      {isSelected && <CheckCircle2 className="h-4 w-4 text-orange-400" />}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           </div>
         )}
 
-      </div>
+        {/* My Store Product Management Modal */}
+        {selectedMyStore && (
+          <MyStoreModal
+            isOpen={Boolean(selectedMyStore)}
+            onClose={() => setSelectedMyStore(null)}
+            myStore={selectedMyStore}
+            onUpdateStore={(updated) => {
+              setSelectedMyStore(updated);
+              onUpdateBusiness?.(updated);
+            }}
+            onOpenStorePublicView={(store) => {
+              setSelectedMyStore(null);
+              onSelectBusiness?.(store);
+            }}
+          />
+        )}
+
     </div>
   );
 };

@@ -200,6 +200,7 @@ export interface ChatMessage {
 
 export interface ChatConversation {
   id: string;
+  kind?: 'direct' | 'marketplace';
   businessId: string;
   businessName: string;
   businessImageUrl?: string;
@@ -231,6 +232,7 @@ export interface CartItem {
   businessWhatsapp?: string;
   traderHostel?: string;
   serviceId: string;
+  productId?: string;
   name: string;
   price: number;
   quantity: number;
@@ -633,4 +635,138 @@ export interface PollUpdatedPayload {
 }
 
 export * from './types/playercard';
+
+// ==========================================
+// Marketplace Core Data Models (Supabase)
+// ==========================================
+export type ProductKind = 'good' | 'service';
+
+export interface Product {
+  id: string;
+  businessId: string;
+  ownerId: string;
+  kind: ProductKind;
+  title: string;
+  description: string;
+  price: number;
+  images: string[];
+  category: string;
+  estimatedTime?: string | null;
+  stockQuantity: number | null; // null = unlimited, 0 = sold out
+  isActive: boolean;
+  soldCount: number;
+  createdAt?: string;
+  updatedAt?: string;
+  // Joined business properties
+  businessName?: string;
+  businessImageUrl?: string;
+  businessHostel?: string;
+  businessRating?: number;
+  businessCategory?: string;
+  businessWhatsapp?: string;
+}
+
+export type OrderStatus = 'placed' | 'accepted' | 'preparing' | 'in_transit' | 'delivered' | 'cancelled';
+export type PaymentMethod = 'cash_on_delivery' | 'transfer';
+
+export interface OrderItem {
+  id: string;
+  orderId: string;
+  productId: string;
+  productTitle?: string;
+  productImage?: string;
+  quantity: number;
+  unitPrice: number;
+  subtotal?: number;
+}
+
+export interface MarketplaceOrder {
+  id: string;
+  orderNumber?: string;
+  businessId: string;
+  businessName?: string;
+  businessImageUrl?: string;
+  businessHostel?: string;
+  businessWhatsapp?: string;
+  traderId?: string;
+  buyerId: string;
+  buyerName?: string;
+  buyerPhone?: string;
+  status: OrderStatus;
+  subtotal?: number;
+  deliveryFee?: number;
+  grandTotal?: number;
+  totalAmount: number;
+  deliveryAddress: string;
+  phone: string;
+  notes?: string;
+  paymentMethod: PaymentMethod;
+  paymentStatus?: 'pending' | 'paid' | 'failed' | 'refunded';
+  createdAt: string;
+  updatedAt?: string;
+  acceptedAt?: string;
+  deliveredAt?: string;
+  cancelledAt?: string;
+  items?: OrderItem[];
+  deliveryPin?: string; // available to buyer via order_secrets
+  cancellationReason?: string;
+  cancelReason?: string;
+}
+
+export interface MarketplaceConversation {
+  id: string;
+  kind?: 'direct' | 'marketplace';
+  businessId: string;
+  businessName?: string;
+  businessImageUrl?: string;
+  buyerId: string;
+  buyerName?: string;
+  buyerAvatar?: string;
+  traderId: string;
+  traderName?: string;
+  status: 'accepted' | 'declined' | 'blocked';
+  lastMessage?: string | null;
+  lastMessageAt?: string | null;
+  buyerUnread: number;
+  traderUnread: number;
+  createdAt: string;
+}
+
+export interface MarketplaceMessage {
+  id: string;
+  conversationId: string;
+  senderId: string;
+  body: string;
+  orderId?: string | null;
+  attachmentUrl?: string | null;
+  attachmentType?: string | null;
+  voiceNoteUrl?: string | null;
+  voiceDuration?: number | null;
+  replyTo?: string | null;
+  readAt?: string | null;
+  createdAt: string;
+}
+
+export interface MarketplaceReview {
+  id: string;
+  businessId: string;
+  orderId: string;
+  reviewerId: string;
+  reviewerName: string;
+  rating: number; // 1-5
+  comment: string;
+  createdAt: string;
+}
+
+export interface DashboardStats {
+  revenueTotal: number;
+  revenuePeriod: number;
+  ordersTotal: number;
+  ordersNew: number;
+  ordersActive: number;
+  ordersDelivered: number;
+  ordersCancelled: number;
+  daily: Array<{ day: string; revenue: number; orders: number }>;
+  topProducts: Array<{ name: string; qty: number; revenue: number }>;
+}
 

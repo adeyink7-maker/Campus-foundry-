@@ -62,35 +62,41 @@ export const CampusSnapsBar = ({
         </button>
 
         {/* List of active snaps */}
-        {snaps.map((snap) => (
-          <button
-            key={snap.id}
-            type="button"
-            onClick={() => onSelectSnap(snap)}
-            className="flex flex-col items-center gap-1.5 shrink-0 group cursor-pointer"
-          >
-            <div className="relative flex h-15 w-15 items-center justify-center rounded-2xl bg-gradient-to-tr from-amber-500 via-rose-500 to-emerald-500 p-[2px] group-hover:scale-105 transition-transform shadow-md">
-              <img
-                src={snap.mediaUrl}
-                alt={snap.caption}
-                className="h-full w-full rounded-xl object-cover border border-neutral-950"
-                loading="lazy"
-              />
-              <div className="absolute -bottom-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-neutral-900 border border-neutral-700 text-amber-400">
-                <MapPin className="h-2.5 w-2.5" />
+        {snaps.length === 0 ? (
+          <div className="flex items-center text-xs text-neutral-500 italic px-3">
+            Nothing here yet
+          </div>
+        ) : (
+          snaps.map((snap) => (
+            <button
+              key={snap.id}
+              type="button"
+              onClick={() => onSelectSnap(snap)}
+              className="flex flex-col items-center gap-1.5 shrink-0 group cursor-pointer"
+            >
+              <div className="relative flex h-15 w-15 items-center justify-center rounded-2xl bg-gradient-to-tr from-amber-500 via-rose-500 to-emerald-500 p-[2px] group-hover:scale-105 transition-transform shadow-md">
+                <img
+                  src={snap.mediaUrl}
+                  alt={snap.caption}
+                  className="h-full w-full rounded-xl object-cover border border-neutral-950"
+                  loading="lazy"
+                />
+                <div className="absolute -bottom-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-neutral-900 border border-neutral-700 text-amber-400">
+                  <MapPin className="h-2.5 w-2.5" />
+                </div>
               </div>
-            </div>
 
-            <div className="text-center max-w-[70px]">
-              <span className="text-[11px] font-bold text-white truncate block group-hover:text-emerald-400 transition-colors">
-                {snap.authorName.split(' ')[0]}
-              </span>
-              <span className="text-[9px] text-neutral-400 truncate block font-mono">
-                {snap.locationTag.split(' ')[0]}
-              </span>
-            </div>
-          </button>
-        ))}
+              <div className="text-center max-w-[70px]">
+                <span className="text-[11px] font-bold text-white truncate block group-hover:text-emerald-400 transition-colors">
+                  {snap.authorName.split(' ')[0]}
+                </span>
+                <span className="text-[9px] text-neutral-400 truncate block font-mono">
+                  {snap.locationTag.split(' ')[0]}
+                </span>
+              </div>
+            </button>
+          ))
+        )}
 
       </div>
     </div>

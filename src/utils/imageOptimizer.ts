@@ -113,3 +113,34 @@ export function captureAndCompressVideoFrame(
 
   return canvas.toDataURL('image/jpeg', quality);
 }
+
+/**
+ * Synchronously converts a base64 Data URL to a Blob
+ */
+export function dataUrlToBlob(dataUrl: string): Blob {
+  if (!dataUrl || !dataUrl.startsWith('data:')) {
+    throw new Error('Invalid or missing data URL');
+  }
+  const parts = dataUrl.split(',');
+  if (parts.length < 2) {
+    throw new Error('Malformed data URL');
+  }
+  const mimeMatch = parts[0].match(/:(.*?);/);
+  const mime = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+  const bstr = atob(parts[1]);
+  let n = bstr.length;
+  const u8arr = new Uint8Array(n);
+  while (n--) {
+    u8arr[n] = bstr.charCodeAt(n);
+  }
+  return new Blob([u8arr], { type: mime });
+}
+
+/**
+ * Synchronously converts a base64 Data URL to a File
+ */
+export function dataUrlToFile(dataUrl: string, fileName: string): File {
+  const blob = dataUrlToBlob(dataUrl);
+  return new File([blob], fileName, { type: blob.type });
+}
+

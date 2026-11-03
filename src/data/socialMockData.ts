@@ -221,196 +221,9 @@ export const BANNER_DATABASE: MotivationCard[] = [
 
 export const MOTIVATIONAL_QUOTES: MotivationCard[] = BANNER_DATABASE;
 
-export const INITIAL_CAMPUS_SNAPS: CampusSnap[] = [
-  {
-    id: 'snap-1',
-    authorId: 'u_adebayo',
-    authorName: 'Bayo Adeyemi',
-    authorAvatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=200&q=80',
-    authorDept: 'Computer Science',
-    authorLevel: '300L',
-    locationTag: 'Senate Building Walkway',
-    mediaUrl: 'https://images.unsplash.com/photo-1523050854058-8df90110c9f1?auto=format&fit=crop&w=800&q=80',
-    caption: 'Golden hour at the Senate Building after 4 hours of Software Engineering lab! 🌅',
-    createdAt: new Date(Date.now() - 2 * 3600 * 1000).toISOString(),
-    expiresInHours: 22,
-    viewsCount: 142,
-  },
-  {
-    id: 'snap-2',
-    authorId: 'u_funke',
-    authorName: 'Funke Alabi',
-    authorAvatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=200&q=80',
-    authorDept: 'Mass Communication',
-    authorLevel: '200L',
-    locationTag: 'Walk of Fame',
-    mediaUrl: 'https://images.unsplash.com/photo-1517486808906-6ca8b3f04846?auto=format&fit=crop&w=800&q=80',
-    caption: 'Walk of fame vibes! Who is coming for the Faculty debate this Friday? 🎙️✨',
-    createdAt: new Date(Date.now() - 4 * 3600 * 1000).toISOString(),
-    expiresInHours: 20,
-    viewsCount: 289,
-  },
-  {
-    id: 'snap-3',
-    authorId: 'u_chidi',
-    authorName: 'Chidi Okonkwo',
-    authorAvatar: 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?auto=format&fit=crop&w=200&q=80',
-    authorDept: 'Mechanical Engineering',
-    authorLevel: '400L',
-    locationTag: 'Faculty of Engineering (ETF)',
-    mediaUrl: 'https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=800&q=80',
-    caption: 'CAD lab final simulations working on first run. God did! ⚙️💻',
-    createdAt: new Date(Date.now() - 6 * 3600 * 1000).toISOString(),
-    expiresInHours: 18,
-    viewsCount: 310,
-  },
-  {
-    id: 'snap-4',
-    authorId: 'u_zainab',
-    authorName: 'Zainab Bello',
-    authorAvatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80',
-    authorDept: 'Biochemistry',
-    authorLevel: '300L',
-    locationTag: 'Lagos Hostel Quad',
-    mediaUrl: 'https://images.unsplash.com/photo-1509440159596-0249088772ff?auto=format&fit=crop&w=800&q=80',
-    caption: 'Fresh batch of pastry boxes out for tonight exam cramming delivery! 🥐📦',
-    createdAt: new Date(Date.now() - 1 * 3600 * 1000).toISOString(),
-    expiresInHours: 23,
-    viewsCount: 95,
-  },
-  {
-    id: 'snap-5',
-    authorId: 'u_emmanuel',
-    authorName: 'Emmanuel Sanni',
-    authorAvatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80',
-    authorDept: 'Political Science',
-    authorLevel: '400L',
-    locationTag: 'SUB Lounge & Quad',
-    mediaUrl: 'https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=800&q=80',
-    caption: 'SUG Presidential Town Hall session packed to capacity. Democracy in action! 🗳️⚡',
-    createdAt: new Date(Date.now() - 3 * 3600 * 1000).toISOString(),
-    expiresInHours: 21,
-    viewsCount: 450,
-  },
-];
+export const INITIAL_CAMPUS_SNAPS: CampusSnap[] = [];
 
-export const INITIAL_CAMPUS_POSTS: CampusPost[] = [
-  {
-    id: 'post-1',
-    authorId: 'u_101',
-    authorName: 'Oluwaseun Balogun',
-    authorAvatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=200&q=80',
-    authorFaculty: 'Faculty of Communication and Information Sciences (CIS)',
-    authorDept: 'Computer Science',
-    authorLevel: '300L',
-    authorRole: 'student',
-    category: 'Academics & GNS',
-    locationTag: 'CIS Block B, Lab 3',
-    content: "📢 GNS 111 & 112 practice portal compilation is now uploaded for all 100L freshers! We assembled 5 years of UNILORIN CBT questions with step-by-step rationales. Check the Academics section -> 100L Resources to download free PDF.",
-    mediaUrl: 'https://images.unsplash.com/photo-1434030216411-0b793f4b4173?auto=format&fit=crop&w=800&q=80',
-    likesCount: 128,
-    likedByMe: false,
-    commentsCount: 24,
-    createdAt: new Date(Date.now() - 3 * 3600 * 1000).toISOString(),
-    isVerifiedStudent: true,
-    pinned: true,
-    comments: [
-      {
-        id: 'c1',
-        postId: 'post-1',
-        authorId: 'u_202',
-        authorName: 'Kehinde Williams',
-        authorLevel: '100L',
-        authorDept: 'Accounting',
-        text: 'God bless you senior Seun! GNS 111 had us stressing all week.',
-        createdAt: new Date(Date.now() - 2 * 3600 * 1000).toISOString(),
-      },
-      {
-        id: 'c2',
-        postId: 'post-1',
-        authorId: 'u_303',
-        authorName: 'Aisha Lawal',
-        authorLevel: '200L',
-        authorDept: 'Microbiology',
-        text: 'Are there also GNS 211 past questions included?',
-        createdAt: new Date(Date.now() - 1 * 3600 * 1000).toISOString(),
-      }
-    ]
-  },
-  {
-    id: 'post-2',
-    authorId: 'u_102',
-    authorName: 'Bukola Johnson',
-    authorAvatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=200&q=80',
-    authorFaculty: 'Faculty of Clinical Sciences',
-    authorDept: 'Nursing Science',
-    authorLevel: '400L',
-    authorRole: 'trader',
-    authorBusinessId: 'biz_bukola_bakes',
-    authorBusinessName: "Bukola's Healthy Bites & Parfait",
-    category: 'Student Hustle & Trades',
-    locationTag: 'Lagos Hostel (Female Wing)',
-    content: "🍓 Fresh Fruit Parfait and Greek Yogurt cups restocked for evening deliveries across Lagos, Abuja, Zamfara, and Private Hostels! 100% organic fruit layers with crunchy granola. Tap on my store profile or DM on WhatsApp for express dorm-door delivery!",
-    mediaUrl: 'https://images.unsplash.com/photo-1488477181946-6428a0291777?auto=format&fit=crop&w=800&q=80',
-    likesCount: 89,
-    likedByMe: true,
-    commentsCount: 15,
-    createdAt: new Date(Date.now() - 5 * 3600 * 1000).toISOString(),
-    isVerifiedStudent: true,
-    comments: [
-      {
-        id: 'c3',
-        postId: 'post-2',
-        authorId: 'u_404',
-        authorName: 'Toluwani Adeleke',
-        authorLevel: '300L',
-        authorDept: 'Economics',
-        text: 'Best parfait in PS! The strawberry layer was incredible yesterday.',
-        createdAt: new Date(Date.now() - 3 * 3600 * 1000).toISOString(),
-      }
-    ]
-  },
-  {
-    id: 'post-3',
-    authorId: 'u_103',
-    authorName: 'Hon. Ibrahim Danladi',
-    authorAvatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80',
-    authorFaculty: 'Faculty of Law',
-    authorDept: 'Public Law',
-    authorLevel: '400L',
-    authorRole: 'student',
-    category: 'SUG & Elections',
-    locationTag: 'Faculty of Law / SUB',
-    content: "⚖️ UNECOM 2026/2027 SUG Presidential Manifesto Town Hall is scheduled for this Thursday, 4:00 PM at the Main Auditorium. My 'Vision 360' manifesto focuses on: 1) 24/7 CBT WiFi Hotspots, 2) Regulated Shuttle Bus Fares (₦150 flat), and 3) Transparent Hostel Maintenance Fund. Let's build a better UNILORIN together!",
-    mediaUrl: 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?auto=format&fit=crop&w=800&q=80',
-    likesCount: 245,
-    likedByMe: false,
-    commentsCount: 68,
-    createdAt: new Date(Date.now() - 8 * 3600 * 1000).toISOString(),
-    isVerifiedStudent: true,
-    comments: []
-  },
-  {
-    id: 'post-4',
-    authorId: 'u_104',
-    authorName: 'David Nwachukwu',
-    authorAvatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=200&q=80',
-    authorFaculty: 'Faculty of Engineering and Technology',
-    authorDept: 'Electrical & Electronics Engineering',
-    authorLevel: '500L',
-    authorRole: 'student',
-    category: 'Events & Sports',
-    locationTag: 'UNILORIN Stadium Complex',
-    content: "⚽ UNILORIN Inter-Faculty Super Cup Semi-Finals kick off tomorrow at the Sports Complex! Engineering Warriors vs CIS Spartans at 3:30 PM. Who are you rooting for? Come cheer your faculty!",
-    mediaUrl: 'https://images.unsplash.com/photo-1508098682722-e99c43a406b2?auto=format&fit=crop&w=800&q=80',
-    likesCount: 164,
-    likedByMe: false,
-    commentsCount: 42,
-    createdAt: new Date(Date.now() - 11 * 3600 * 1000).toISOString(),
-    isVerifiedStudent: true,
-    comments: []
-  },
-];
+export const INITIAL_CAMPUS_POSTS: CampusPost[] = [];
 
 export const POLITICAL_FELICITATIONS = [
   {
@@ -476,7 +289,7 @@ export const POLITICAL_CANDIDATES: PoliticalCandidate[] = [
     ],
     videoPitchUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
     townhallLink: 'https://meet.google.com/unilorin-sug-townhall',
-    endorsementsCount: 842,
+    endorsementsCount: 0,
     endorsedByMe: false,
     campaignUpdates: [
       {
@@ -525,8 +338,8 @@ export const POLITICAL_CANDIDATES: PoliticalCandidate[] = [
         description: 'Establish an anonymous peer counselor chatline in collaboration with the Department of Psychology and Guidance & Counseling Unit.'
       }
     ],
-    endorsementsCount: 620,
-    endorsedByMe: true,
+    endorsementsCount: 0,
+    endorsedByMe: false,
     campaignUpdates: [
       {
         id: 'u3',
@@ -568,7 +381,7 @@ export const POLITICAL_CANDIDATES: PoliticalCandidate[] = [
         description: 'Sponsor AWS, Google Cloud, and Azure certification exam vouchers for top-performing departmental programmers.'
       }
     ],
-    endorsementsCount: 490,
+    endorsementsCount: 0,
     endorsedByMe: false,
     campaignUpdates: [],
     contacts: {

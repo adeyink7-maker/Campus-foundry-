@@ -19,11 +19,13 @@ import {
   X,
   Phone,
   CheckCircle2,
-  Trophy
+  Trophy,
+  LogOut
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useChat } from '../context/ChatContext';
 import { usePlayerCard } from '../context/PlayerCardContext';
+import { emitAppToast } from '../services/supabase';
 import { LongPressAvatar } from './playercard/LongPressAvatar';
 import { AppUser, CampusPost, CampusSnap, StudentBusiness } from '../types';
 import { EditProfileModal } from './EditProfileModal';
@@ -48,7 +50,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
   onSelectBusiness,
   onOpenTraderProfile,
 }) => {
-  const { currentUser, toggleFollowUser } = useAuth();
+  const { currentUser, toggleFollowUser, signOut } = useAuth();
   const { openChatDrawer } = useChat();
   const { openPlayerCard, openEditor } = usePlayerCard();
 
@@ -104,6 +106,10 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
   };
 
   const handleDirectMessage = () => {
+    if (currentUser && activeUser && currentUser.id === activeUser.id) {
+      emitAppToast("You can't message yourself", 'error');
+      return;
+    }
     openChatDrawer();
   };
 
@@ -176,6 +182,15 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                     title="Share Profile Link"
                   >
                     <Share2 className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={signOut}
+                    className="px-3.5 py-1.5 rounded-xl bg-neutral-800 hover:bg-rose-950/40 text-neutral-300 hover:text-rose-400 border border-neutral-700 hover:border-rose-500/40 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+                    title="Sign Out of Profile"
+                  >
+                    <LogOut className="h-3.5 w-3.5" />
+                    <span>Sign Out</span>
                   </button>
                 </>
               ) : (

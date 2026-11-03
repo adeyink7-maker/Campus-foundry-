@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { StudentBusiness } from '../types';
 import { useChat } from '../context/ChatContext';
+import { useAuth } from '../context/AuthContext';
 
 interface ListingCarouselFocusProps {
   businesses: StudentBusiness[];
@@ -32,6 +33,7 @@ export const ListingCarouselFocus = ({
   const [dragOffsetY, setDragOffsetY] = useState(0);
 
   const { openChatWithBusiness } = useChat();
+  const { currentUser } = useAuth();
   const stageRef = useRef<HTMLDivElement>(null);
   const touchStartY = useRef<number | null>(null);
   const touchDeltaY = useRef<number>(0);
@@ -286,7 +288,12 @@ export const ListingCarouselFocus = ({
 
                       {/* Badges on Banner */}
                       <div className="absolute top-2.5 left-2.5 right-2.5 flex items-center justify-between">
-                        {biz.isTemplate ? (
+                        {currentUser && (biz.ownerId === currentUser.id || (biz.ownerEmail && currentUser.email && biz.ownerEmail.toLowerCase() === currentUser.email.toLowerCase())) ? (
+                          <div className="flex items-center gap-1 rounded-md bg-amber-500/90 px-2.5 py-0.5 text-[10px] font-extrabold text-neutral-950 shadow-md uppercase tracking-wider">
+                            <Store className="h-3 w-3" />
+                            <span>Your listing</span>
+                          </div>
+                        ) : biz.isTemplate ? (
                           <div className="flex items-center gap-1 rounded-md bg-amber-500/90 px-2 py-0.5 text-[10px] font-bold text-neutral-950 shadow-md">
                             <Sparkles className="h-3 w-3" />
                             <span>Starter Template (Demo)</span>
@@ -372,47 +379,68 @@ export const ListingCarouselFocus = ({
                     </div>
 
                     <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          openChatWithBusiness(biz);
-                        }}
-                        title={`Chat directly with ${biz.ownerName}`}
-                        className="flex items-center gap-1.5 rounded-xl border border-neutral-700 bg-neutral-800 hover:border-emerald-500 hover:bg-neutral-700 hover:text-emerald-300 px-3 py-2 text-xs font-semibold text-neutral-200 transition-colors cursor-pointer"
-                      >
-                        <MessageSquare className="h-3.5 w-3.5 text-emerald-400" />
-                        <span>Chat</span>
-                      </button>
+                      {currentUser && (biz.ownerId === currentUser.id || (biz.ownerEmail && currentUser.email && biz.ownerEmail.toLowerCase() === currentUser.email.toLowerCase())) ? (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (onOpenTraderProfile) {
+                              onOpenTraderProfile(biz);
+                            } else {
+                              onSelectBusiness(biz);
+                            }
+                          }}
+                          title="Manage Store"
+                          className="flex items-center gap-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 px-4 py-2 text-xs font-extrabold shadow-md transition-all cursor-pointer"
+                        >
+                          <Store className="h-3.5 w-3.5" />
+                          <span>Manage</span>
+                        </button>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openChatWithBusiness(biz);
+                            }}
+                            title={`Chat directly with ${biz.ownerName}`}
+                            className="flex items-center gap-1.5 rounded-xl border border-neutral-700 bg-neutral-800 hover:border-emerald-500 hover:bg-neutral-700 hover:text-emerald-300 px-3 py-2 text-xs font-semibold text-neutral-200 transition-colors cursor-pointer"
+                          >
+                            <MessageSquare className="h-3.5 w-3.5 text-emerald-400" />
+                            <span>Chat</span>
+                          </button>
 
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (onOpenTraderProfile) {
-                            onOpenTraderProfile(biz);
-                          } else {
-                            onSelectBusiness(biz);
-                          }
-                        }}
-                        title="View Trader Profile & Portfolio"
-                        className="flex items-center gap-1.5 rounded-xl border border-amber-500/50 bg-amber-500/10 hover:bg-amber-500 hover:text-neutral-950 px-3 py-2 text-xs font-bold text-amber-300 transition-all cursor-pointer shadow-sm"
-                      >
-                        <Store className="h-3.5 w-3.5" />
-                        <span>Portfolio</span>
-                      </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (onOpenTraderProfile) {
+                                onOpenTraderProfile(biz);
+                              } else {
+                                onSelectBusiness(biz);
+                              }
+                            }}
+                            title="View Trader Profile & Portfolio"
+                            className="flex items-center gap-1.5 rounded-xl border border-amber-500/50 bg-amber-500/10 hover:bg-amber-500 hover:text-neutral-950 px-3 py-2 text-xs font-bold text-amber-300 transition-all cursor-pointer shadow-sm"
+                          >
+                            <Store className="h-3.5 w-3.5" />
+                            <span>Portfolio</span>
+                          </button>
 
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onSelectBusiness(biz);
-                        }}
-                        className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 px-3.5 py-2 text-xs font-bold text-white shadow-md shadow-emerald-950/50 transition-all cursor-pointer"
-                      >
-                        <ShoppingBag className="h-3.5 w-3.5" />
-                        <span>Menu</span>
-                      </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onSelectBusiness(biz);
+                            }}
+                            className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 px-3.5 py-2 text-xs font-bold text-white shadow-md shadow-emerald-950/50 transition-all cursor-pointer"
+                          >
+                            <ShoppingBag className="h-3.5 w-3.5" />
+                            <span>Menu</span>
+                          </button>
+                        </>
+                      )}
                     </div>
                   </div>
 

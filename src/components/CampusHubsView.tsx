@@ -40,7 +40,7 @@ export const CampusHubsView = ({
                   {hub.type}
                 </span>
                 <span className="text-xs font-mono text-neutral-400 bg-neutral-950 px-2.5 py-1 rounded-lg border border-neutral-800">
-                  {hub.businessCount}+ Student Trades
+                  {hub.zone}
                 </span>
               </div>
 

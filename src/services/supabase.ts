@@ -1,5 +1,5 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { CampusPost, CampusSnap, StudentBusiness, CampusComment } from '../types';
+import { CampusPost, CampusSnap, StudentBusiness, CampusComment, ChatConversation, ChatMessage } from '../types';
 
 /**
  * Checks if a string is a Supabase API key (publishable key, secret key, or JWT)
@@ -175,34 +175,526 @@ export function formatSupabaseErrorMessage(err: any, defaultMessage = 'An unexpe
 }
 
 /**
- * Storage Helper: Upload a file (avatar, product image, story snap, etc.)
+ * Ensures an active Supabase Auth session (auth.uid()) exists via supabase.auth.getSession().
  */
-export async function uploadMedia(
-  bucket: 'avatars' | 'media' | 'businesses',
-  path: string,
-  file: File | Blob
-): Promise<string> {
-  if (!isSupabaseConfigured) {
-    return URL.createObjectURL(file);
-  }
+export async function ensureSupabaseAuthSession(): Promise<string | null> {
+  if (!isSupabaseConfigured) return null;
 
   try {
-    const { data, error } = await supabase.storage.from(bucket).upload(path, file, {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.user?.id) {
+      return session.user.id;
+    }
+  } catch (err) {
+    console.warn('[Supabase Auth]: Session verification exception:', err);
+  }
+
+  return null;
+}
+
+export async function uploadMedia(
+  bucket: 'avatars' | 'media' | 'businesses' | 'audio' | 'voice-notes' | 'player-cards',
+  path: string,
+  file: File | Blob,
+  customContentType?: string
+): Promise<string> {
+  if (!isSupabaseConfigured) {
+    const err = new Error('Supabase Storage is not configured.');
+    console.error(`[Supabase Storage Upload Error (${bucket}/${path})]:`, {
+      message: err.message,
+      code: 'STORAGE_NOT_CONFIGURED',
+      details: 'VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY is missing or invalid',
+    });
+    emitAppToast('Storage is not configured. Please check your Supabase credentials.', 'error');
+    throw err;
+  }
+
+  // Enforce RULE: the first folder of the path must equal the signed-in user's id
+  let targetPath = path.trim().replace(/^\/+/, '');
+  if (!targetPath.includes('/')) {
+    let uid = 'usr_me';
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (sessionData?.session?.user?.id) {
+        uid = sessionData.session.user.id;
+      }
+    } catch {}
+    targetPath = `${uid}/${targetPath}`;
+  }
+
+  const rawMime = customContentType || file.type || '';
+  const cleanContentType = rawMime ? rawMime.split(';')[0].trim() : undefined;
+
+  try {
+    const { data, error } = await supabase.storage.from(bucket).upload(targetPath, file, {
       upsert: true,
+      contentType: cleanContentType,
     });
 
     if (error) {
-      console.warn(`[Supabase Storage Notice (${bucket}/${path})]:`, error.message);
-      return URL.createObjectURL(file);
+      console.error(`[Supabase Storage Upload Error (${bucket}/${targetPath})]:`, {
+        message: error.message,
+        code: (error as any)?.code || (error as any)?.statusCode,
+        details: (error as any)?.details || error.message,
+        error,
+      });
+      emitAppToast(`Upload failed: ${error.message || 'Storage error'}`, 'error');
+      throw error;
     }
 
     const { data: publicData } = supabase.storage.from(bucket).getPublicUrl(data.path);
     return publicData.publicUrl;
   } catch (err: any) {
-    console.warn('[Supabase Storage uploadMedia fallback]:', err?.message || err);
-    return URL.createObjectURL(file);
+    console.error(`[Supabase Storage Exception (${bucket}/${targetPath})]:`, {
+      message: err?.message || err,
+      code: err?.code || err?.statusCode,
+      details: err?.details || err?.message,
+      err,
+    });
+    emitAppToast(err?.message ? `Upload failed: ${err.message}` : 'Upload failed. Please try again.', 'error');
+    throw err;
   }
 }
+
+
+/**
+ * Helper to determine real audio file extension from mime type or file name
+ */
+export function getAudioExtension(mimeOrName?: string): string {
+  if (!mimeOrName) return 'webm';
+  const lower = mimeOrName.toLowerCase();
+  if (lower.includes('mp4') || lower.includes('m4a')) return 'mp4';
+  if (lower.includes('ogg') || lower.includes('opus')) return 'ogg';
+  if (lower.includes('wav')) return 'wav';
+  if (lower.includes('aac')) return 'aac';
+  if (lower.includes('mpeg') || lower.includes('mp3')) return 'mp3';
+  return 'webm';
+}
+
+export const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+export function isValidUuid(val?: string | null): boolean {
+  return Boolean(val && UUID_REGEX.test(val));
+}
+
+// Set of known mock conversation IDs to skip Supabase operations on
+export const MOCK_CONV_IDS = new Set<string>([
+  '8c0d7b2f-9f5e-4c9b-ab2c-2d3e4f5a6b02',
+  '9d1e8c3a-0a6f-4da0-bc3d-3e4f5a6b7c03',
+  'conv_campus_bites_1',
+  'conv_dami_lagos',
+  'conv_tunde_tech',
+  '4f1a2b3c-4d5e-4a1b-8c2d-3e4f5a6b7c01',
+  '5a2b3c4d-5e6f-4b2c-9d3e-4f5a6b7c8d02',
+]);
+
+
+/**
+ * Checks if a conversation ID belongs to local mock data
+ */
+export function isMockConversation(convId?: string | null): boolean {
+  if (!convId) return true;
+  if (MOCK_CONV_IDS.has(convId)) return true;
+  if (
+    convId.startsWith('conv_') ||
+    convId.startsWith('mock_') ||
+    convId.startsWith('demo_') ||
+    convId.startsWith('biz_') ||
+    !isValidUuid(convId)
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Returns val if already a valid UUID, or converts any arbitrary string
+ * deterministically into a valid RFC4122 v4 UUID so PostgreSQL UUID columns never error with 22P02.
+ */
+export function toSafeUuid(str?: string | null): string {
+  if (!str) return '00000000-0000-4000-8000-000000000000';
+  if (UUID_REGEX.test(str)) return str;
+
+  // 128-bit deterministic hash
+  let h1 = 0xdeadbeef, h2 = 0x41c64e6d, h3 = 0x9e3779b9, h4 = 0x85ebca6b;
+  for (let i = 0; i < str.length; i++) {
+    const ch = str.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
+    h3 = Math.imul(h3 ^ ch, 2246822507);
+    h4 = Math.imul(h4 ^ ch, 3266489909);
+  }
+  const hex = [h1, h2, h3, h4]
+    .map((h) => (h >>> 0).toString(16).padStart(8, '0'))
+    .join('');
+
+  return (
+    hex.substring(0, 8) +
+    '-' +
+    hex.substring(8, 12) +
+    '-4' +
+    hex.substring(13, 16) +
+    '-a' +
+    hex.substring(17, 20) +
+    '-' +
+    hex.substring(20, 32)
+  );
+}
+
+/**
+ * Generates standard RFC4122 v4 UUID
+ */
+export function generateVoiceUuid(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
+// In-memory cache for fast local playback of voice notes (blob URLs)
+const voiceNoteBlobCache = new Map<string, string>();
+
+/**
+ * Resolves a voice note path or URL into a playable URL for HTML5 Audio playback.
+ * If the path is stored as `${userId}/${uuid}.${ext}`, it resolves via Supabase Storage 'audio' bucket.
+ */
+export function getPlayableAudioUrl(urlOrPath?: string): string {
+  if (!urlOrPath) return '';
+  // If it's already an absolute or blob/data URL, return directly
+  if (
+    urlOrPath.startsWith('http://') ||
+    urlOrPath.startsWith('https://') ||
+    urlOrPath.startsWith('blob:') ||
+    urlOrPath.startsWith('data:')
+  ) {
+    return urlOrPath;
+  }
+
+  // Check if we have an active in-memory blob for instant zero-latency playback
+  if (voiceNoteBlobCache.has(urlOrPath)) {
+    return voiceNoteBlobCache.get(urlOrPath)!;
+  }
+
+  // Resolve public URL from Supabase Storage 'audio' bucket
+  try {
+    const { data } = supabase.storage.from('audio').getPublicUrl(urlOrPath);
+    return data?.publicUrl || urlOrPath;
+  } catch (err) {
+    console.warn('[Supabase getPlayableAudioUrl Error]:', err);
+    return urlOrPath;
+  }
+}
+
+/**
+ * Dispatches an application toast notification for user-visible error handling
+ */
+export function emitAppToast(message: string, type: 'error' | 'success' | 'info' = 'error'): void {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(
+      new CustomEvent('campus-toast', {
+        detail: { message, type },
+      })
+    );
+  }
+}
+
+/**
+ * Uploads a recorded voice note audio blob to Supabase Storage ('audio' or 'voice-notes' bucket).
+ * Constructs file path `${activeUid}/${uuid}.${ext}` where activeUid equals the signed-in user's id.
+ * Strips any ";codecs=..." from contentType to adhere to allowed mime types.
+ */
+export async function uploadVoiceNoteAudio(
+  fileOrBlob: File | Blob,
+  userId?: string
+): Promise<string> {
+  const ext = getAudioExtension(fileOrBlob.type || (fileOrBlob as File).name);
+  const uuid = generateVoiceUuid();
+
+  // 1. Resolve active auth.uid() from Supabase session to satisfy Storage RLS policy
+  let activeUid = userId;
+  if (isSupabaseConfigured) {
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (sessionData?.session?.user?.id) {
+        activeUid = sessionData.session.user.id;
+      }
+    } catch {}
+  }
+
+  if (!activeUid || activeUid === 'usr_me') {
+    activeUid = toSafeUuid(userId || 'usr_me');
+  }
+
+  const filePath = `${activeUid}/${uuid}.${ext}`;
+
+  if (!isSupabaseConfigured) {
+    const err = new Error('Supabase Storage is not configured for voice notes.');
+    console.error('[Voice Note Upload Error]:', {
+      message: err.message,
+      code: 'STORAGE_NOT_CONFIGURED',
+      details: 'VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY is missing or invalid',
+    });
+    emitAppToast('Voice note storage is not configured.', 'error');
+    throw err;
+  }
+
+  // Strip any ";codecs=..." from mimeType to match allowed Supabase bucket types
+  const rawMime = fileOrBlob.type || `audio/${ext}`;
+  const cleanContentType = rawMime ? rawMime.split(';')[0].trim() : `audio/${ext}`;
+
+  try {
+    const { data, error } = await supabase.storage
+      .from('audio')
+      .upload(filePath, fileOrBlob, {
+        upsert: true,
+        contentType: cleanContentType,
+      });
+
+    if (error) {
+      console.error('[Voice Note Upload Error]:', {
+        message: error.message,
+        code: (error as any)?.code || (error as any)?.statusCode,
+        details: (error as any)?.details || error.message,
+        error,
+      });
+      emitAppToast(`Failed to upload voice note: ${error.message || 'Storage error'}`, 'error');
+      throw error;
+    }
+
+    const { data: publicData } = supabase.storage.from('audio').getPublicUrl(data.path);
+    if (!publicData?.publicUrl) {
+      const err = new Error('Failed to obtain public URL from audio bucket');
+      console.error('[Voice Note Upload Error]:', err);
+      emitAppToast('Failed to obtain voice note URL', 'error');
+      throw err;
+    }
+    return publicData.publicUrl;
+  } catch (err: any) {
+    console.error('[Voice Note Upload Exception]:', {
+      message: err?.message || err,
+      code: err?.code || err?.statusCode,
+      details: err?.details || err?.message,
+      err,
+    });
+    if (!err?.message?.includes('Failed to upload voice note')) {
+      emitAppToast(err?.message ? `Failed to upload voice note: ${err.message}` : 'Failed to upload voice note. Please try again.', 'error');
+    }
+    throw err;
+  }
+}
+
+/**
+ * Uploads a snap photo or video to Supabase Storage 'media' bucket at `${userId}/snaps/${uuid}.${ext}`.
+ * - Photos: compressed to 1280px wide JPEG before upload (contentType: 'image/jpeg').
+ * - Videos: validated for max 30 seconds and <= 25 MB before upload (contentType: file.type || 'video/mp4').
+ * - Failure: throws the error, logs full error details, and never returns a blob: URL.
+ */
+export async function uploadSnapMedia(
+  fileOrBlob: File | Blob,
+  userId: string
+): Promise<{ url: string; mediaType: 'image' | 'video' }> {
+  const isVideo = fileOrBlob.type.startsWith('video');
+
+  // Resolve user id from session or parameter
+  let activeUid = userId;
+  if (isSupabaseConfigured) {
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (sessionData?.session?.user?.id) {
+        activeUid = sessionData.session.user.id;
+      }
+    } catch {}
+  }
+  if (!activeUid || activeUid === 'usr_me') {
+    activeUid = toSafeUuid(userId || 'usr_me');
+  }
+
+  const uuid = generateVoiceUuid();
+
+  if (!isSupabaseConfigured) {
+    const err = new Error('Supabase Storage is not configured for snaps.');
+    console.error('[Snap Upload Error]:', {
+      message: err.message,
+      code: 'STORAGE_NOT_CONFIGURED',
+      details: 'VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY is missing or invalid',
+    });
+    emitAppToast('Media storage is not configured.', 'error');
+    throw err;
+  }
+
+  if (isVideo) {
+    // 1. File size check (max ~25 MB)
+    const MAX_VIDEO_BYTES = 25 * 1024 * 1024;
+    if (fileOrBlob.size > MAX_VIDEO_BYTES) {
+      const err = new Error('Video file size exceeds 25 MB limit');
+      console.error('[Snap Upload Error]: Video file size exceeds 25 MB limit', {
+        message: err.message,
+        code: 'FILE_TOO_LARGE',
+        details: `File size: ${fileOrBlob.size} bytes`,
+      });
+      emitAppToast('Video is too large. Snaps must be under 25 MB.', 'error');
+      throw err;
+    }
+
+    // 2. Video duration check (max 30 seconds)
+    if (typeof document !== 'undefined') {
+      try {
+        const duration = await new Promise<number>((resolve) => {
+          const video = document.createElement('video');
+          video.preload = 'metadata';
+          const tempUrl = URL.createObjectURL(fileOrBlob);
+          video.onloadedmetadata = () => {
+            URL.revokeObjectURL(tempUrl);
+            resolve(video.duration || 0);
+          };
+          video.onerror = () => {
+            URL.revokeObjectURL(tempUrl);
+            resolve(0);
+          };
+          video.src = tempUrl;
+        });
+
+        if (duration > 30.5) {
+          const err = new Error('Video duration exceeds 30 seconds');
+          console.error('[Snap Upload Error]: Video duration exceeds 30 seconds', {
+            message: err.message,
+            code: 'VIDEO_TOO_LONG',
+            duration,
+          });
+          emitAppToast('Video is too long. Snaps must be 30 seconds or shorter.', 'error');
+          throw err;
+        }
+      } catch (videoMetaErr) {
+        console.warn('[Snap Upload]: Could not verify video duration, proceeding with upload:', videoMetaErr);
+      }
+    }
+
+    const rawExt = (fileOrBlob as File).name?.split('.').pop()?.toLowerCase();
+    const ext = rawExt || (fileOrBlob.type.includes('webm') ? 'webm' : 'mp4');
+    const filePath = `${activeUid}/snaps/${uuid}.${ext}`;
+    const contentType = fileOrBlob.type ? fileOrBlob.type.split(';')[0].trim() : 'video/mp4';
+
+    try {
+      const { error } = await supabase.storage
+        .from('media')
+        .upload(filePath, fileOrBlob, {
+          contentType,
+          upsert: true,
+        });
+
+      if (error) {
+        console.error('[Snap Video Upload Error]:', {
+          message: error.message,
+          code: (error as any)?.code || (error as any)?.statusCode,
+          details: (error as any)?.details || error.message,
+          error,
+        });
+        emitAppToast(`Failed to upload snap: ${error.message || 'Storage error'}`, 'error');
+        throw error;
+      }
+
+      const { data: publicData } = supabase.storage.from('media').getPublicUrl(filePath);
+      return { url: publicData.publicUrl, mediaType: 'video' };
+    } catch (err: any) {
+      console.error('[Snap Video Upload Exception]:', {
+        message: err?.message || err,
+        code: err?.code || err?.statusCode,
+        details: err?.details || err?.message,
+        err,
+      });
+      emitAppToast(err?.message ? `Failed to upload video snap: ${err.message}` : 'Failed to upload video snap. Please try again.', 'error');
+      throw err;
+    }
+  } else {
+    // Photos: compress to 1280px wide JPEG before upload
+    let uploadBlob: Blob = fileOrBlob;
+    if (typeof document !== 'undefined') {
+      try {
+        uploadBlob = await new Promise<Blob>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onerror = () => reject(new Error('Failed to read image file'));
+          reader.onload = (e) => {
+            const img = new Image();
+            img.onerror = () => reject(new Error('Failed to load image for compression'));
+            img.onload = () => {
+              let width = img.width;
+              let height = img.height;
+              const maxWidth = 1280;
+              if (width > maxWidth) {
+                const ratio = maxWidth / width;
+                width = maxWidth;
+                height = Math.round(height * ratio);
+              }
+              const canvas = document.createElement('canvas');
+              canvas.width = width;
+              canvas.height = height;
+              const ctx = canvas.getContext('2d');
+              if (!ctx) {
+                return resolve(fileOrBlob);
+              }
+              ctx.imageSmoothingEnabled = true;
+              ctx.imageSmoothingQuality = 'high';
+              ctx.drawImage(img, 0, 0, width, height);
+              canvas.toBlob(
+                (blob) => {
+                  if (blob) resolve(blob);
+                  else resolve(fileOrBlob);
+                },
+                'image/jpeg',
+                0.85
+              );
+            };
+            img.src = e.target?.result as string;
+          };
+          reader.readAsDataURL(fileOrBlob);
+        });
+      } catch (compressErr) {
+        console.warn('[Snap Upload]: Image compression failed, using original file:', compressErr);
+      }
+    }
+
+    const filePath = `${activeUid}/snaps/${uuid}.jpg`;
+    const contentType = 'image/jpeg';
+
+    try {
+      const { error } = await supabase.storage
+        .from('media')
+        .upload(filePath, uploadBlob, {
+          contentType,
+          upsert: true,
+        });
+
+      if (error) {
+        console.error('[Snap Image Upload Error]:', {
+          message: error.message,
+          code: (error as any)?.code || (error as any)?.statusCode,
+          details: (error as any)?.details || error.message,
+          error,
+        });
+        emitAppToast(`Failed to upload snap: ${error.message || 'Storage error'}`, 'error');
+        throw error;
+      }
+
+      const { data: publicData } = supabase.storage.from('media').getPublicUrl(filePath);
+      return { url: publicData.publicUrl, mediaType: 'image' };
+    } catch (err: any) {
+      console.error('[Snap Image Upload Exception]:', {
+        message: err?.message || err,
+        code: err?.code || err?.statusCode,
+        details: err?.details || err?.message,
+        err,
+      });
+      emitAppToast(err?.message ? `Failed to upload image snap: ${err.message}` : 'Failed to upload image snap. Please try again.', 'error');
+      throw err;
+    }
+  }
+}
+
+
 
 /**
  * Test connectivity to the Supabase backend
@@ -222,6 +714,55 @@ export async function testSupabaseConnection(): Promise<boolean> {
   }
 }
 
+/**
+ * System Reset for Launch Readiness:
+ * Clears local state and resets all collections/tables for users/profiles,
+ * vendors/stores, posts, comments, snaps, orders, and chats so the database starts at zero.
+ */
+export async function resetDatabaseToZero(): Promise<{ success: boolean; message: string }> {
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.removeItem('campus_foundry_user_session_v4');
+      localStorage.removeItem('campus_foundry_chat_messages_v7');
+      localStorage.removeItem('campus_foundry_chat_conversations_v7');
+      localStorage.removeItem('campus_foundry_mp_conversations_v1');
+      localStorage.removeItem('campus_foundry_posts_v4');
+      localStorage.removeItem('campus_foundry_snaps_v4');
+      localStorage.removeItem('campus_foundry_custom_businesses_v4');
+    } catch {}
+  }
+
+  if (!isSupabaseConfigured) {
+    return { success: true, message: 'Local storage reset to zero successfully.' };
+  }
+
+  try {
+    const isOnline = typeof navigator === 'undefined' || navigator.onLine;
+    if (!isOnline) {
+      return { success: true, message: 'Local state cleared. (Offline mode)' };
+    }
+
+    await Promise.allSettled([
+      supabase.from('product_orders').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
+      supabase.from('marketplace_products').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
+      supabase.from('student_businesses').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
+      supabase.from('campus_comments').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
+      supabase.from('campus_posts').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
+      supabase.from('campus_snaps').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
+      supabase.from('chat_messages').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
+      supabase.from('chat_conversations').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
+      supabase.from('marketplace_messages').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
+      supabase.from('marketplace_conversations').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
+      supabase.from('profiles').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
+    ]);
+
+    return { success: true, message: 'Backend database collections/tables reset to zero.' };
+  } catch (err: any) {
+    console.warn('[Supabase resetDatabaseToZero Notice]:', err?.message || err);
+    return { success: false, message: err?.message || 'Database reset exception' };
+  }
+}
+
 // ============================================================================
 // SUPABASE CRUD OPERATIONS FOR CAMPUS POSTS
 // ============================================================================
@@ -235,7 +776,12 @@ export async function fetchCampusPostsFromSupabase(): Promise<CampusPost[]> {
       .order('created_at', { ascending: false });
 
     if (error) {
-      console.warn('[Supabase fetchCampusPosts Notice]:', error.message || error);
+      console.error('[Supabase fetchCampusPosts Error]:', {
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code,
+      });
       return [];
     }
 
@@ -273,52 +819,154 @@ export async function fetchCampusPostsFromSupabase(): Promise<CampusPost[]> {
       })),
     }));
   } catch (err: any) {
-    console.warn('[Supabase fetchCampusPosts Exception]:', err?.message || err);
+    console.error('[Supabase fetchCampusPosts Exception]:', err?.message || err);
     return [];
   }
 }
 
-export async function createCampusPostInSupabase(post: CampusPost): Promise<void> {
-  if (!isSupabaseConfigured) return;
-  try {
-    const { error } = await supabase.from('campus_posts').insert({
-      id: post.id.startsWith('post_') ? undefined : post.id,
-      author_id: post.authorId,
-      author_name: post.authorName,
-      author_username: post.authorUsername,
-      author_avatar: post.authorAvatar,
-      author_dept: post.authorDept,
-      author_level: post.authorLevel,
-      author_role: post.authorRole,
-      author_business_id: post.authorBusinessId,
-      content: post.content,
-      category: post.category,
-      media_url: post.mediaUrl,
-      mediaType: post.mediaType,
-      location_tag: post.locationTag,
-      likes_count: post.likesCount || 0,
-      comments_count: 0,
-      reactions: post.reactions,
-      pinned: post.pinned || false,
-      created_at: post.createdAt,
+export async function createCampusPostInSupabase(post: CampusPost): Promise<CampusPost> {
+  if (!isSupabaseConfigured) {
+    const err = new Error('Supabase is not configured.');
+    console.error('[Supabase createCampusPost Error]:', {
+      message: err.message,
+      code: 'NOT_CONFIGURED',
+      details: 'VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY is missing',
     });
+    emitAppToast('Database is not configured. Post cannot be saved.', 'error');
+    throw err;
+  }
+
+  const payload: Record<string, any> = {
+    author_id: post.authorId,
+    author_name: post.authorName,
+    author_username: post.authorUsername,
+    author_avatar: post.authorAvatar,
+    author_dept: post.authorDept,
+    author_level: post.authorLevel,
+    author_role: post.authorRole,
+    author_business_id: post.authorBusinessId,
+    content: post.content || '',
+    category: post.category,
+    media_url: post.mediaUrl || null,
+    media_type: post.mediaType || (post.mediaUrl ? 'image' : null),
+    location_tag: post.locationTag,
+    likes_count: post.likesCount || 0,
+    comments_count: post.commentsCount || 0,
+    reactions: post.reactions || null,
+    pinned: Boolean(post.pinned),
+    created_at: post.createdAt || new Date().toISOString(),
+  };
+
+  if (isValidUuid(post.id)) {
+    payload.id = post.id;
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('campus_posts')
+      .insert(payload)
+      .select('*, campus_comments(*)')
+      .single();
+
     if (error) {
-      console.warn('[Supabase createCampusPost Notice]:', error.message || error);
+      console.error('[Supabase createCampusPost Error]:', {
+        message: error.message,
+        code: error.code,
+        details: error.details,
+        hint: error.hint,
+        payload,
+      });
+      emitAppToast(`Failed to publish post: ${error.message || 'Database error'}`, 'error');
+      throw error;
     }
+
+    const row = data;
+    return {
+      id: row.id,
+      authorId: row.author_id,
+      authorName: row.author_name,
+      authorUsername: row.author_username,
+      authorAvatar: row.author_avatar,
+      authorDept: row.author_dept,
+      authorLevel: row.author_level,
+      authorRole: row.author_role,
+      authorBusinessId: row.author_business_id,
+      content: row.content,
+      category: row.category,
+      mediaUrl: row.media_url,
+      mediaType: row.media_type,
+      locationTag: row.location_tag,
+      likesCount: row.likes_count || 0,
+      commentsCount: row.comments_count || 0,
+      reactions: row.reactions,
+      pinned: row.pinned,
+      createdAt: row.created_at,
+      comments: [],
+    };
   } catch (err: any) {
-    console.warn('[Supabase createCampusPost Exception]:', err?.message || err);
+    console.error('[Supabase createCampusPost Exception]:', {
+      message: err?.message || err,
+      code: err?.code,
+      details: err?.details || err?.message,
+      err,
+    });
+    emitAppToast(err?.message ? `Failed to publish post: ${err.message}` : 'Failed to publish post. Please try again.', 'error');
+    throw err;
   }
 }
+
 
 export async function deleteCampusPostInSupabase(postId: string): Promise<void> {
   if (!isSupabaseConfigured) return;
   try {
     const { error } = await supabase.from('campus_posts').delete().eq('id', postId);
     if (error) {
-      console.warn('[Supabase deleteCampusPost Notice]:', error.message || error);
+      console.error('[Supabase deleteCampusPost Error]:', error);
     }
   } catch (err: any) {
-    console.warn('[Supabase deleteCampusPost Exception]:', err?.message || err);
+    console.error('[Supabase deleteCampusPost Exception]:', err?.message || err);
+  }
+}
+
+export async function deletePostsByUserInSupabase(usernameOrQuery: string): Promise<number> {
+  const query = usernameOrQuery.trim().toLowerCase().replace('@', '');
+  if (!query) return 0;
+
+  // 1. Purge from local storage
+  if (typeof window !== 'undefined') {
+    try {
+      const saved = localStorage.getItem('campus_foundry_posts_v4');
+      if (saved) {
+        const posts: CampusPost[] = JSON.parse(saved);
+        const filtered = posts.filter((p) => {
+          const authorUser = (p.authorUsername || '').toLowerCase().replace('@', '');
+          const authorName = (p.authorName || '').toLowerCase();
+          const authorId = (p.authorId || '').toLowerCase();
+          return !authorUser.includes(query) && !authorName.includes(query) && !authorId.includes(query);
+        });
+        localStorage.setItem('campus_foundry_posts_v4', JSON.stringify(filtered));
+      }
+    } catch {}
+  }
+
+  if (!isSupabaseConfigured) return 0;
+
+  try {
+    const { data, error } = await supabase
+      .from('campus_posts')
+      .delete()
+      .or(`author_username.ilike.%${query}%,author_name.ilike.%${query}%,author_id.ilike.%${query}%`)
+      .select('id');
+
+    if (error) {
+      console.error('[Supabase deletePostsByUser Error]:', error);
+      return 0;
+    }
+
+    return data?.length || 0;
+  } catch (err: any) {
+    console.error('[Supabase deletePostsByUser Exception]:', err);
+    return 0;
   }
 }
 
@@ -327,10 +975,10 @@ export async function toggleCampusPostLikeInSupabase(postId: string, newLikesCou
   try {
     const { error } = await supabase.from('campus_posts').update({ likes_count: newLikesCount }).eq('id', postId);
     if (error) {
-      console.warn('[Supabase toggleCampusPostLike Notice]:', error.message || error);
+      console.error('[Supabase toggleCampusPostLike Error]:', error);
     }
   } catch (err: any) {
-    console.warn('[Supabase toggleCampusPostLike Exception]:', err?.message || err);
+    console.error('[Supabase toggleCampusPostLike Exception]:', err?.message || err);
   }
 }
 
@@ -348,10 +996,15 @@ export async function addCampusCommentInSupabase(comment: CampusComment): Promis
       created_at: comment.createdAt,
     });
     if (error) {
-      console.warn('[Supabase addCampusComment Notice]:', error.message || error);
+      console.error('[Supabase addCampusComment Error]:', {
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code,
+      });
     }
   } catch (err: any) {
-    console.warn('[Supabase addCampusComment Exception]:', err?.message || err);
+    console.error('[Supabase addCampusComment Exception]:', err?.message || err);
   }
 }
 
@@ -368,8 +1021,13 @@ export async function fetchStudentBusinessesFromSupabase(): Promise<StudentBusin
       .order('created_at', { ascending: false });
 
     if (error) {
-      console.warn('[Supabase fetchStudentBusinesses Notice]:', error.message || error);
-      return [];
+      console.error('[Supabase fetchStudentBusinesses Error]:', {
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code,
+      });
+      throw error;
     }
 
     return (data || []).map((row: any) => ({
@@ -398,8 +1056,8 @@ export async function fetchStudentBusinessesFromSupabase(): Promise<StudentBusin
       verifiedStudent: Boolean(row.verified_student),
     }));
   } catch (err: any) {
-    console.warn('[Supabase fetchStudentBusinesses Exception]:', err?.message || err);
-    return [];
+    console.error('[Supabase fetchStudentBusinesses Exception]:', err?.message || err);
+    throw err;
   }
 }
 
@@ -434,10 +1092,15 @@ export async function upsertStudentBusinessInSupabase(biz: StudentBusiness): Pro
     });
 
     if (error) {
-      console.warn('[Supabase upsertStudentBusiness Notice]:', error.message || error);
+      console.error('[Supabase upsertStudentBusiness Error]:', {
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code,
+      });
     }
   } catch (err: any) {
-    console.warn('[Supabase upsertStudentBusiness Exception]:', err?.message || err);
+    console.error('[Supabase upsertStudentBusiness Exception]:', err?.message || err);
   }
 }
 
@@ -446,10 +1109,10 @@ export async function deleteStudentBusinessInSupabase(bizId: string): Promise<vo
   try {
     const { error } = await supabase.from('student_businesses').delete().eq('id', bizId);
     if (error) {
-      console.warn('[Supabase deleteStudentBusiness Notice]:', error.message || error);
+      console.error('[Supabase deleteStudentBusiness Error]:', error);
     }
   } catch (err: any) {
-    console.warn('[Supabase deleteStudentBusiness Exception]:', err?.message || err);
+    console.error('[Supabase deleteStudentBusiness Exception]:', err?.message || err);
   }
 }
 
@@ -460,14 +1123,32 @@ export async function deleteStudentBusinessInSupabase(bizId: string): Promise<vo
 export async function fetchCampusSnapsFromSupabase(): Promise<CampusSnap[]> {
   if (!isSupabaseConfigured) return [];
   try {
-    const { data, error } = await supabase
+    const nowIso = new Date().toISOString();
+    // Query campus_snaps with real-time expiry filter
+    let { data, error } = await supabase
       .from('campus_snaps')
       .select('*')
-      .gt('expires_at', new Date().toISOString())
+      .gt('expires_at', nowIso)
       .order('created_at', { ascending: false });
 
+    // Fallback to singular campus_snap if user created that table name
+    if (error && (error.code === '42P01' || error.message?.includes('does not exist'))) {
+      const fallback = await supabase
+        .from('campus_snap')
+        .select('*')
+        .gt('expires_at', nowIso)
+        .order('created_at', { ascending: false });
+      data = fallback.data;
+      error = fallback.error;
+    }
+
     if (error) {
-      console.warn('[Supabase fetchCampusSnaps Notice]:', error.message || error);
+      console.error('[Supabase fetchCampusSnaps Error]:', {
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code,
+      });
       return [];
     }
 
@@ -490,36 +1171,577 @@ export async function fetchCampusSnapsFromSupabase(): Promise<CampusSnap[]> {
       stickers: row.stickers || [],
     }));
   } catch (err: any) {
-    console.warn('[Supabase fetchCampusSnaps Exception]:', err?.message || err);
+    console.error('[Supabase fetchCampusSnaps Exception]:', err?.message || err);
     return [];
   }
 }
 
-export async function createCampusSnapInSupabase(snap: CampusSnap): Promise<void> {
+export async function createCampusSnapInSupabase(snap: CampusSnap): Promise<CampusSnap> {
+  if (!isSupabaseConfigured) {
+    const err = new Error('Supabase is not configured.');
+    console.error('[Supabase createCampusSnap Error]:', {
+      message: err.message,
+      code: 'NOT_CONFIGURED',
+      details: 'VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY is missing',
+    });
+    emitAppToast('Database is not configured. Snap cannot be saved.', 'error');
+    throw err;
+  }
+
+  if (snap.mediaUrl && snap.mediaUrl.startsWith('blob:')) {
+    const err = new Error('Invalid snap media URL: blob URL detected. Must upload to storage first.');
+    console.error('[Supabase createCampusSnap Error]: Attempted to insert blob: URL into campus_snaps', {
+      message: err.message,
+      mediaUrl: snap.mediaUrl,
+    });
+    emitAppToast('Failed to save snap: media upload incomplete.', 'error');
+    throw err;
+  }
+
+  const payload: Record<string, any> = {
+    author_id: snap.authorId,
+    author_name: snap.authorName,
+    author_username: snap.authorUsername,
+    author_avatar: snap.authorAvatar,
+    author_dept: snap.authorDept,
+    author_level: snap.authorLevel,
+    location_tag: snap.locationTag,
+    media_url: snap.mediaUrl,
+    media_type: snap.mediaType || 'image',
+    caption: snap.caption || '',
+    created_at: snap.createdAt || new Date().toISOString(),
+    expires_in_hours: snap.expiresInHours || 24,
+    views_count: snap.viewsCount || 0,
+    stickers: snap.stickers || [],
+  };
+
+  if (isValidUuid(snap.id)) {
+    payload.id = snap.id;
+  }
+
+  try {
+    let { data, error } = await supabase.from('campus_snaps').insert(payload).select().single();
+
+    // Fallback to singular campus_snap table if needed
+    if (error && (error.code === '42P01' || error.message?.includes('does not exist'))) {
+      const fallback = await supabase.from('campus_snap').insert(payload).select().single();
+      error = fallback.error;
+      data = fallback.data;
+    }
+
+    if (error) {
+      console.error('[Supabase createCampusSnap Error]:', {
+        message: error.message,
+        code: error.code,
+        details: error.details,
+        hint: error.hint,
+        payload,
+      });
+      emitAppToast(`Failed to post snap: ${error.message || 'Database error'}`, 'error');
+      throw error;
+    }
+
+    return {
+      ...snap,
+      id: data?.id || snap.id,
+    };
+  } catch (err: any) {
+    console.error('[Supabase createCampusSnap Exception]:', {
+      message: err?.message || err,
+      code: err?.code,
+      details: err?.details || err?.message,
+      err,
+    });
+    emitAppToast(err?.message ? `Failed to post snap: ${err.message}` : 'Failed to post snap. Please try again.', 'error');
+    throw err;
+  }
+}
+
+
+export async function deleteCampusSnapInSupabase(snapId: string): Promise<void> {
   if (!isSupabaseConfigured) return;
   try {
-    const { error } = await supabase.from('campus_snaps').insert({
-      id: snap.id.startsWith('snap_') ? undefined : snap.id,
-      author_id: snap.authorId,
-      author_name: snap.authorName,
-      author_username: snap.authorUsername,
-      author_avatar: snap.authorAvatar,
-      author_dept: snap.authorDept,
-      author_level: snap.authorLevel,
-      location_tag: snap.locationTag,
-      media_url: snap.mediaUrl,
-      media_type: snap.mediaType || 'image',
-      caption: snap.caption,
-      created_at: snap.createdAt,
-      expires_in_hours: snap.expiresInHours || 24,
-      views_count: snap.viewsCount || 0,
-      stickers: snap.stickers || [],
+    let { error } = await supabase.from('campus_snaps').delete().eq('id', snapId);
+    if (error && (error.code === '42P01' || error.message?.includes('does not exist'))) {
+      const fallback = await supabase.from('campus_snap').delete().eq('id', snapId);
+      error = fallback.error;
+    }
+    if (error) {
+      console.error('[Supabase deleteCampusSnap Error]:', error);
+    }
+  } catch (err: any) {
+    console.error('[Supabase deleteCampusSnap Exception]:', err);
+  }
+}
+
+export async function purgeExpiredCampusSnapsInSupabase(): Promise<void> {
+  if (!isSupabaseConfigured) return;
+  try {
+    const nowIso = new Date().toISOString();
+    let { error } = await supabase
+      .from('campus_snaps')
+      .delete()
+      .lt('expires_at', nowIso);
+
+    // Fallback to singular campus_snap if needed
+    if (error && (error.code === '42P01' || error.message?.includes('does not exist'))) {
+      const fallback = await supabase
+        .from('campus_snap')
+        .delete()
+        .lt('expires_at', nowIso);
+      error = fallback.error;
+    }
+
+    if (error) {
+      console.error('[Supabase purgeExpiredCampusSnaps Error]:', error);
+    }
+  } catch (err: any) {
+    console.error('[Supabase purgeExpiredCampusSnaps Exception]:', err);
+  }
+}
+
+// ============================================================================
+// SUPABASE CRUD OPERATIONS FOR CONVERSATIONS & DIRECT MESSAGES
+// ============================================================================
+
+/**
+ * Helper to detect if a table is missing from Supabase schema cache (e.g. PGRST205 or 42P01)
+ * Note: PGRST204 is column missing, not table missing.
+ */
+function isTableMissingError(error: any): boolean {
+  if (!error) return false;
+  return (
+    error.code === 'PGRST205' ||
+    error.code === '42P01' ||
+    (typeof error.message === 'string' &&
+      (error.message.includes('Could not find the table') ||
+       (error.message.includes('relation') && error.message.includes('does not exist'))))
+  );
+}
+
+/**
+ * Helper to detect PostgreSQL invalid UUID syntax error (code 22P02)
+ */
+function isUuidSyntaxError(error: any): boolean {
+  if (!error) return false;
+  return (
+    error.code === '22P02' ||
+    (typeof error.message === 'string' &&
+      (error.message.includes('invalid input syntax for type uuid') ||
+       error.message.includes('type uuid')))
+  );
+}
+
+/**
+ * Helper to detect PostgreSQL Row-Level Security (RLS) policy rejection or permission restrictions (code 42501)
+ */
+function isRlsOrPermissionError(error: any): boolean {
+  if (!error) return false;
+  return (
+    error.code === '42501' ||
+    (typeof error.message === 'string' &&
+      (error.message.includes('row-level security') ||
+       error.message.includes('permission denied') ||
+       error.message.includes('violates row-level security')))
+  );
+}
+
+export async function fetchConversationsFromSupabase(userId: string): Promise<ChatConversation[]> {
+  if (!isSupabaseConfigured || !userId) return [];
+  const safeUserId = toSafeUuid(userId);
+  const filterQuery = isValidUuid(userId)
+    ? `buyer_id.eq.${userId},trader_id.eq.${userId}`
+    : `buyer_id.eq.${safeUserId},trader_id.eq.${safeUserId}`;
+
+  // Target chat_conversations exclusively
+  const { data, error } = await supabase
+    .from('chat_conversations')
+    .select('*')
+    .or(filterQuery)
+    .order('last_message_timestamp', { ascending: false });
+
+  if (error) {
+    console.error('[Supabase fetchConversations Error]:', {
+      message: error.message,
+      code: error.code,
+      details: error.details,
+      hint: error.hint,
+    });
+    // Log error to console instead of showing raw error toast to the user
+    return [];
+  }
+
+  return (data || []).map((row: any) => ({
+    id: row.id,
+    kind: 'direct' as const,
+    businessId: row.business_id,
+    businessName: row.business_name,
+    businessImageUrl: row.business_image_url,
+    traderName: row.trader_name,
+    traderId: row.trader_id,
+    traderHostel: row.trader_hostel,
+    buyerId: row.buyer_id,
+    buyerName: row.buyer_name,
+    buyerEmail: row.buyer_email,
+    lastMessage: row.last_message,
+    lastMessageTimestamp: row.last_message_timestamp,
+    unreadCount: row.unread_count || 0,
+    isMessageRequest: row.is_message_request || false,
+    requestStatus: row.request_status || 'accepted',
+    isOnline: row.is_online ?? true,
+    lastSeen: row.last_seen || 'Online',
+    chatTheme: row.chat_theme,
+  }));
+}
+
+/**
+ * Ensures a real row exists in the chat_conversations table before any message is sent.
+ * Verifies that the current user is a valid participant (buyer_id or trader_id matches auth.uid()).
+ * Returns true if successful or already exists, false on error.
+ */
+export async function ensureConversationInSupabase(
+  conv: ChatConversation,
+  authUid: string
+): Promise<boolean> {
+  if (!isSupabaseConfigured || !conv?.id) return false;
+
+  // Skip Supabase queries for conversations that are local mock data
+  if (isMockConversation(conv.id)) {
+    return true;
+  }
+
+  const safeConvId = toSafeUuid(conv.id);
+  const safeBusinessId = conv.businessId ? toSafeUuid(conv.businessId) : null;
+  const isTrader = authUid === toSafeUuid(conv.traderId);
+
+  try {
+    // 1. Check if the conversation row already exists in chat_conversations
+    const { data: existing, error: checkError } = await supabase
+      .from('chat_conversations')
+      .select('id')
+      .eq('id', safeConvId)
+      .maybeSingle();
+
+    if (checkError) {
+      console.error('[Supabase checkConversation Error]:', {
+        message: checkError.message,
+        code: checkError.code,
+        details: checkError.details,
+        hint: checkError.hint,
+        conversationId: safeConvId,
+      });
+      return false;
+    }
+
+    const payload = {
+      id: safeConvId,
+      business_id: safeBusinessId,
+      business_name: conv.businessName || '',
+      business_image_url: conv.businessImageUrl || null,
+      trader_name: conv.traderName || 'Trader',
+      trader_id: isTrader ? authUid : toSafeUuid(conv.traderId || 'trader_id'),
+      buyer_id: isTrader ? toSafeUuid(conv.buyerId || 'buyer_id') : authUid,
+      buyer_name: conv.buyerName || 'Student Buyer',
+      last_message: conv.lastMessage || '',
+      last_message_timestamp: conv.lastMessageTimestamp || new Date().toISOString(),
+    };
+
+    if (!existing) {
+      // Insert new conversation row
+      const { error: insertError } = await supabase
+        .from('chat_conversations')
+        .insert(payload);
+
+      if (insertError) {
+        console.error('[Supabase insertConversation Error]:', {
+          message: insertError.message,
+          code: insertError.code,
+          details: insertError.details,
+          hint: insertError.hint,
+          payload,
+        });
+        return false;
+      }
+    } else {
+      // Update existing conversation timestamp and last message
+      const { error: updateError } = await supabase
+        .from('chat_conversations')
+        .update({
+          last_message: conv.lastMessage || '',
+          last_message_timestamp: conv.lastMessageTimestamp || new Date().toISOString(),
+        })
+        .eq('id', safeConvId);
+
+      if (updateError) {
+        console.error('[Supabase updateConversation Error]:', {
+          message: updateError.message,
+          code: updateError.code,
+          details: updateError.details,
+          hint: updateError.hint,
+        });
+        return false;
+      }
+    }
+    return true;
+  } catch (err) {
+    console.error('[Supabase ensureConversation Exception]:', err);
+    return false;
+  }
+}
+
+export async function upsertConversationInSupabase(conv: ChatConversation, authUid?: string): Promise<void> {
+  if (!isSupabaseConfigured) return;
+  let uid = authUid;
+  if (!uid) {
+    const { data: { session } } = await supabase.auth.getSession();
+    uid = session?.user?.id;
+  }
+  if (!uid) {
+    console.warn('[Supabase upsertConversation Notice]: auth.uid() not available yet.');
+    return;
+  }
+  await ensureConversationInSupabase(conv, uid);
+}
+
+/**
+ * Loads messages for a conversation from the Supabase chat_messages table.
+ * Strictly queries the required columns: id, conversation_id, sender_id, recipient_id, text, is_read, order_snippet, created_at.
+ */
+export async function fetchMessagesFromSupabase(conversationId: string): Promise<ChatMessage[]> {
+  if (!isSupabaseConfigured || !conversationId) return [];
+
+  // Skip Supabase queries for conversations that are local mock data
+  if (isMockConversation(conversationId)) {
+    return [];
+  }
+
+  const safeConvId = toSafeUuid(conversationId);
+
+  const { data, error } = await supabase
+    .from('chat_messages')
+    .select('id, conversation_id, sender_id, recipient_id, text, is_read, order_snippet, created_at, voice_note_url, voice_duration, voice_waveform')
+    .eq('conversation_id', safeConvId)
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    console.error('[Supabase fetchMessages Error]:', {
+      message: error.message,
+      code: error.code,
+      details: error.details,
+      hint: error.hint,
+      conversationId: safeConvId,
+    });
+    // Log to console instead of showing raw error toast to the user
+    return [];
+  }
+
+  return (data || []).map((row: any) => ({
+    id: row.id || `msg_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+    conversationId: row.conversation_id,
+    businessId: '',
+    businessName: '',
+    senderId: row.sender_id,
+    senderName: row.sender_id,
+    senderRole: 'student',
+    recipientId: row.recipient_id,
+    recipientName: 'Participant',
+    text: row.text || '',
+    timestamp: row.created_at,
+    isRead: Boolean(row.is_read),
+    deliveryState: row.is_read ? 'read' : 'delivered',
+    orderSnippet: row.order_snippet || undefined,
+    voiceNoteUrl: row.voice_note_url || undefined,
+    voiceDuration: row.voice_duration != null ? Number(row.voice_duration) : undefined,
+    voiceWaveform: row.voice_waveform || undefined,
+  }));
+}
+
+/**
+ * Inserts a message into the Supabase chat_messages table.
+ * Columns: id, conversation_id, sender_id, recipient_id, text, is_read, order_snippet, created_at.
+ * Requires authUid to match auth.uid() to comply with Row Level Security.
+ * Logs all errors to console without showing raw error text to the user.
+ */
+export async function insertChatMessageInSupabase(
+  msg: ChatMessage,
+  authUid: string
+): Promise<void> {
+  if (!isSupabaseConfigured) {
+    console.warn('[Supabase insertChatMessage Notice]: Supabase is not configured.');
+    return;
+  }
+  if (!msg || isMockConversation(msg.conversationId)) {
+    return;
+  }
+
+  const safeId = toSafeUuid(msg.id);
+  const safeConvId = toSafeUuid(msg.conversationId);
+  const safeRecipientId = toSafeUuid(msg.recipientId);
+
+  let textContent = msg.text ? msg.text.trim() : '';
+  if (!textContent) {
+    if (msg.voiceNoteUrl) {
+      textContent = '🎤 Voice message';
+    } else {
+      textContent = 'Message';
+    }
+  }
+
+  // Strictly target requested columns: id, conversation_id, sender_id, recipient_id, text, is_read, order_snippet, created_at, voice_note_url, voice_duration, voice_waveform
+  const payload: Record<string, any> = {
+    id: safeId,
+    conversation_id: safeConvId,
+    sender_id: authUid,
+    recipient_id: safeRecipientId,
+    text: textContent,
+    is_read: Boolean(msg.isRead),
+    order_snippet: msg.orderSnippet ? (typeof msg.orderSnippet === 'string' ? msg.orderSnippet : JSON.stringify(msg.orderSnippet)) : null,
+    created_at: msg.timestamp || new Date().toISOString(),
+  };
+
+  if (msg.voiceNoteUrl) {
+    payload.voice_note_url = msg.voiceNoteUrl;
+    payload.voice_duration = msg.voiceDuration != null ? Number(msg.voiceDuration) : null;
+    payload.voice_waveform = msg.voiceWaveform || null;
+  }
+
+  const { error } = await supabase.from('chat_messages').insert(payload);
+
+  if (error) {
+    if (error.code === '42501' || error.message?.includes('permission denied')) {
+      console.warn('[Supabase save notice (RLS permission 42501)]:', {
+        message: error.message,
+        code: error.code,
+        details: error.details,
+        hint: error.hint,
+        payload,
+      });
+      return;
+    }
+    console.error('[Supabase save error]:', {
+      message: error.message,
+      code: error.code,
+      details: error.details,
+      hint: error.hint,
+      payload,
+    });
+    emitAppToast(`Save failed: ${error.message || 'Database error'}`, 'error');
+    throw error;
+  }
+}
+
+
+// ============================================================================
+// SUPABASE POLL VOTES HELPERS
+// ============================================================================
+
+export async function fetchPollVotesFromSupabase(
+  pollId: string,
+  userId?: string
+): Promise<{ votes: Record<string, number>; hasVoted: boolean }> {
+  if (!isSupabaseConfigured) {
+    return { votes: {}, hasVoted: false };
+  }
+
+  try {
+    const votes: Record<string, number> = {};
+    let hasVoted = false;
+    const safeUid = userId ? toSafeUuid(userId) : null;
+
+    // 1. Call supabase.rpc('get_poll_results', { p_poll_id: pollId }) and read candidate_id and votes columns
+    const { data: rpcData, error: rpcError } = await supabase.rpc('get_poll_results', {
+      p_poll_id: pollId,
+    });
+
+    if (!rpcError && Array.isArray(rpcData)) {
+      rpcData.forEach((row: { candidate_id: string; votes: number }) => {
+        if (row.candidate_id) {
+          votes[row.candidate_id] = Number(row.votes) || 0;
+        }
+      });
+    } else {
+      // 2. Fallback to direct select on poll_votes table
+      const { data, error } = await supabase
+        .from('poll_votes')
+        .select('candidate_id, user_id')
+        .eq('poll_id', pollId);
+
+      if (!error && Array.isArray(data)) {
+        data.forEach((row: any) => {
+          const cid = row.candidate_id;
+          if (cid) votes[cid] = (votes[cid] || 0) + 1;
+        });
+      }
+    }
+
+    // 3. Verify user vote status
+    if (userId) {
+      const { data: userVoteRow } = await supabase
+        .from('poll_votes')
+        .select('id')
+        .eq('poll_id', pollId)
+        .or(`user_id.eq.${userId},user_id.eq.${safeUid}`)
+        .maybeSingle();
+
+      if (userVoteRow) {
+        hasVoted = true;
+      }
+    }
+
+    return { votes, hasVoted };
+  } catch (err: any) {
+    console.error('[Supabase fetchPollVotes Exception]:', err?.message || err);
+    return { votes: {}, hasVoted: false };
+  }
+}
+
+export async function castPollVoteInSupabase(
+  pollId: string,
+  userId: string,
+  candidateId: string
+): Promise<{ success: boolean; error?: string }> {
+  if (!isSupabaseConfigured) {
+    return { success: true };
+  }
+
+  try {
+    let safeUserId = toSafeUuid(userId);
+    // Get actual auth session UID if available to satisfy RLS policy (user_id = auth.uid())
+    const { data: sessionData } = await supabase.auth.getSession();
+    if (sessionData?.session?.user?.id) {
+      safeUserId = sessionData.session.user.id;
+    }
+
+    const { error } = await supabase.from('poll_votes').insert({
+      poll_id: pollId,
+      user_id: safeUserId,
+      candidate_id: candidateId,
+      created_at: new Date().toISOString(),
     });
 
     if (error) {
-      console.warn('[Supabase createCampusSnap Notice]:', error.message || error);
+      console.error('[Supabase castPollVote Error]:', {
+        message: error.message,
+        code: error.code,
+        details: error.details,
+      });
+
+      // Handle duplicate vote error (code 23505) with friendly message
+      if (
+        error.code === '23505' ||
+        error.code === '42501' ||
+        error.message?.includes('unique constraint') ||
+        error.message?.includes('duplicate key') ||
+        error.message?.includes('poll_votes_poll_id_user_id_key')
+      ) {
+        return { success: false, error: 'You have already cast your vote in this election poll!' };
+      }
+      return { success: false, error: error.message || 'Could not record your vote.' };
     }
+
+    return { success: true };
   } catch (err: any) {
-    console.warn('[Supabase createCampusSnap Exception]:', err?.message || err);
+    console.error('[Supabase castPollVote Exception]:', err?.message || err);
+    return { success: false, error: err?.message || 'Vote failed.' };
   }
 }

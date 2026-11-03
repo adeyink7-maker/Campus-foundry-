@@ -17,7 +17,9 @@ import {
   GraduationCap,
   Building2,
   X,
-  RotateCcw
+  RotateCcw,
+  AlertCircle,
+  RefreshCw
 } from 'lucide-react';
 import { StudentBusiness } from '../types';
 import { CATEGORIES, CAMPUS_ZONES, UNILORIN_FACULTIES, ALL_UNILORIN_HOSTELS } from '../data/mockData';
@@ -37,6 +39,10 @@ interface BusinessDirectoryProps {
   includeDemoTemplates?: boolean;
   onToggleDemoTemplates?: () => void;
   onOpenTraderProfile?: (business: StudentBusiness) => void;
+  isLoading?: boolean;
+  error?: string | null;
+  onRetry?: () => void;
+  onOpenBecomeTrader?: () => void;
 }
 
 export const BusinessDirectory = ({
@@ -47,9 +53,13 @@ export const BusinessDirectory = ({
   onSelectCampus,
   onSelectBusiness,
   onOpenCreateBusiness,
-  includeDemoTemplates = true,
+  includeDemoTemplates = false,
   onToggleDemoTemplates,
   onOpenTraderProfile,
+  isLoading = false,
+  error = null,
+  onRetry,
+  onOpenBecomeTrader,
 }: BusinessDirectoryProps) => {
   const [selectedCategory, setSelectedCategory] = useState<string>('All Categories');
   const [deliveryOnly, setDeliveryOnly] = useState<boolean>(false);
@@ -163,7 +173,7 @@ export const BusinessDirectory = ({
             <div>
               <span className="font-bold text-amber-300">About the {templateCount} Initial Listings:</span>
               <p className="text-neutral-300 text-xs mt-0.5 leading-relaxed">
-                These {templateCount} stores are pre-seeded <strong>Starter Showcase Templates</strong> (Lagos Hostel bakery, CIS screen repair, dorm barbers, thrift clothes, errand runner, project print) built so you can preview store menus, checkout, and live chat. Real students haven't listed these yet!
+                These {templateCount} stores are pre-seeded <strong>Starter Showcase Templates</strong> built so you can preview store menus, checkout, and live chat.
               </p>
             </div>
           </div>
@@ -217,9 +227,7 @@ export const BusinessDirectory = ({
 
           {/* Accurate Status Pill */}
           <div className="flex items-center gap-1.5 text-xs font-mono text-neutral-400 tabular-nums bg-neutral-900 border border-neutral-800 rounded-xl px-3 py-2">
-            <span className="text-emerald-400 font-bold">{liveCount} live registered</span>
-            <span>·</span>
-            <span className="text-amber-400 font-medium">{templateCount} demo templates</span>
+            <span className="text-emerald-400 font-bold">{liveCount} registered stores</span>
           </div>
         </div>
       </div>
@@ -523,8 +531,65 @@ export const BusinessDirectory = ({
 
       </div>
 
-      {/* Listings Display: Carousel Focus View vs Grid */}
-      {filteredListings.length > 0 ? (
+      {/* Listings Display: Loading Skeletons vs Error vs Empty vs Grid/Carousel */}
+      {isLoading && businesses.length === 0 ? (
+        <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+          {[1, 2, 3, 4, 5, 6].map((n) => (
+            <div
+              key={n}
+              className="rounded-2xl border border-neutral-800 bg-neutral-900/60 p-4 space-y-3 animate-pulse"
+            >
+              <div className="w-full aspect-square rounded-xl bg-neutral-800" />
+              <div className="h-4 w-3/4 rounded-md bg-neutral-800" />
+              <div className="h-4 w-1/3 rounded-md bg-neutral-800" />
+              <div className="pt-2 border-t border-neutral-800/80 flex items-center justify-between">
+                <div className="h-3 w-1/3 rounded bg-neutral-800" />
+                <div className="h-3 w-8 rounded bg-neutral-800" />
+              </div>
+              <div className="h-11 w-full rounded-xl bg-neutral-800" />
+            </div>
+          ))}
+        </div>
+      ) : error && businesses.length === 0 ? (
+        <div className="mt-12 rounded-2xl border border-neutral-800 bg-neutral-900/40 p-8 sm:p-12 text-center max-w-2xl mx-auto">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-rose-500/10 text-rose-400 border border-rose-500/20 mb-4">
+            <AlertCircle className="h-7 w-7" />
+          </div>
+          <h3 className="text-lg font-bold text-white">Unable to load campus traders</h3>
+          <p className="mt-2 text-xs sm:text-sm text-neutral-400 max-w-md mx-auto leading-relaxed">
+            Please check your network connection and try again.
+          </p>
+          <div className="mt-6 flex justify-center">
+            <button
+              type="button"
+              onClick={onRetry}
+              className="inline-flex items-center gap-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 px-5 py-2.5 text-xs sm:text-sm font-bold text-white transition-all cursor-pointer"
+            >
+              <RefreshCw className="h-4 w-4" />
+              <span>Retry</span>
+            </button>
+          </div>
+        </div>
+      ) : businesses.length === 0 ? (
+        <div className="mt-12 rounded-2xl border border-neutral-800 bg-neutral-900/40 p-8 sm:p-12 text-center max-w-2xl mx-auto">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-500/10 text-amber-400 border border-amber-500/20 mb-4">
+            <ShoppingBag className="h-7 w-7" />
+          </div>
+          <h3 className="text-lg font-bold text-white">No traders yet. Be the first to open a store</h3>
+          <p className="mt-2 text-xs sm:text-sm text-neutral-400 max-w-md mx-auto leading-relaxed">
+            Register your hostel bakes, tech repair, dorm styling, or campus brand today!
+          </p>
+          <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+            <button
+              type="button"
+              onClick={onOpenBecomeTrader || onOpenCreateBusiness}
+              className="rounded-xl bg-amber-500 hover:bg-amber-400 px-5 py-2.5 text-xs sm:text-sm font-bold text-neutral-950 shadow-lg shadow-amber-950/40 transition-all cursor-pointer"
+            >
+              Become a Trader
+            </button>
+          </div>
+        </div>
+      ) : filteredListings.length > 0 ? (
         viewLayout === 'carousel' ? (
           <div className="mt-4">
             <ListingCarouselFocus

@@ -444,24 +444,14 @@ export const SidebarNav = ({
           ) : (
             <div className="rounded-2xl border border-neutral-800 bg-neutral-900/60 p-3 text-center space-y-2">
               <p className="text-[11px] text-neutral-400">Join the UNILORIN Network</p>
-              <div className="grid grid-cols-2 gap-2">
-                <motion.button
-                  whileTap={{ scale: 0.95 }}
-                  type="button"
-                  onClick={() => onOpenAuth?.('unilorin-otp')}
-                  className="rounded-xl bg-blue-600/30 border border-blue-500/40 hover:bg-blue-600/40 text-blue-200 py-1.5 text-xs font-semibold"
-                >
-                  UNILORIN OTP
-                </motion.button>
-                <motion.button
-                  whileTap={{ scale: 0.95 }}
-                  type="button"
-                  onClick={() => onOpenAuth?.('signup')}
-                  className="rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white py-1.5 text-xs font-semibold shadow-sm"
-                >
-                  Register
-                </motion.button>
-              </div>
+              <motion.button
+                whileTap={{ scale: 0.95 }}
+                type="button"
+                onClick={() => onOpenAuth?.('signin')}
+                className="w-full rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white py-2 text-xs font-bold shadow-md shadow-blue-950/40 transition-all cursor-pointer flex items-center justify-center gap-1.5"
+              >
+                <span>Sign In with Student Portal</span>
+              </motion.button>
             </div>
           )}
         </div>

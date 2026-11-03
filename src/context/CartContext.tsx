@@ -1,15 +1,46 @@
 import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
-import { CartItem, WishlistItem, OrderRecord, StudentBusiness, AppUser } from '../types';
+import { CartItem, WishlistItem, StudentBusiness } from '../types';
 import { useAuth } from './AuthContext';
-import { useChat } from './ChatContext';
+import { 
+  placeOrder as apiPlaceOrder, 
+  getDeliveryPin as apiGetDeliveryPin, 
+  fetchOrderPlacedDetails,
+  PaymentMethod,
+  isSupabaseConfigured,
+  mapMarketplaceError
+} from '../services/marketplace';
+import { supabase, emitAppToast } from '../services/supabase';
+
+export interface CheckoutResult {
+  orderId: string;
+  orderNumber: string;
+  deliveryPin: string | null;
+  businessId: string;
+  businessName: string;
+  subtotal: number;
+  deliveryFee: number;
+  grandTotal: number;
+  totalAmount: number;
+  deliveryAddress: string;
+  phone: string;
+  notes?: string;
+  paymentMethod: PaymentMethod;
+  paymentStatus: string;
+  bankDetails?: {
+    hasBank: boolean;
+    bankName?: string;
+    accountNumber?: string;
+    accountName?: string;
+  };
+  items: CartItem[];
+}
 
 interface CartContextType {
   cartItems: CartItem[];
   wishlistItems: WishlistItem[];
-  orders: OrderRecord[];
   isCartOpen: boolean;
   setIsCartOpen: (open: boolean) => void;
-  addToCart: (item: Omit<CartItem, 'id' | 'addedAt'>) => void;
+  addToCart: (item: Omit<CartItem, 'id' | 'addedAt'>) => boolean;
   updateQuantity: (cartItemId: string, quantity: number) => void;
   removeFromCart: (cartItemId: string) => CartItem | null;
   undoLastRemoval: () => void;
@@ -20,7 +51,12 @@ interface CartContextType {
   grandTotal: number;
   toggleWishlist: (business: StudentBusiness) => boolean;
   isWishlisted: (businessId: string) => boolean;
-  placeOrders: (deliveryDetails: { hostelRoom: string; phone?: string; notes?: string }) => Promise<OrderRecord[]>;
+  checkoutOrder: (details: {
+    deliveryAddress: string;
+    phone?: string;
+    notes?: string;
+    paymentMethod: PaymentMethod;
+  }) => Promise<CheckoutResult[]>;
 }
 
 const CartContext = createContext<CartContextType | undefined>(undefined);
@@ -28,9 +64,7 @@ const CartContext = createContext<CartContextType | undefined>(undefined);
 const STORAGE_GUEST_TOKEN_KEY = 'campus_foundry_guest_token_v2';
 const STORAGE_CART_PREFIX = 'campus_foundry_cart_';
 const STORAGE_WISHLIST_PREFIX = 'campus_foundry_wishlist_';
-const STORAGE_ORDERS_PREFIX = 'campus_foundry_orders_';
 
-// Generate or retrieve persistent guest token for unauthenticated visitors
 function getOrCreateGuestToken(): string {
   try {
     let token = localStorage.getItem(STORAGE_GUEST_TOKEN_KEY);
@@ -46,7 +80,6 @@ function getOrCreateGuestToken(): string {
 
 export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { currentUser } = useAuth();
-  const { openChatWithBusiness } = useChat();
 
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [guestToken] = useState<string>(() => getOrCreateGuestToken());
@@ -57,7 +90,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return currentUser ? `user_${currentUser.id}` : `guest_${guestToken}`;
   }, [currentUser, guestToken]);
 
-  // Persistent Cart state
+  // Persistent Cart state in localStorage
   const [cartItems, setCartItems] = useState<CartItem[]>(() => {
     try {
       const key = `${STORAGE_CART_PREFIX}${currentUser ? `user_${currentUser.id}` : `guest_${getOrCreateGuestToken()}`}`;
@@ -68,7 +101,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   });
 
-  // Persistent Wishlist state
+  // Persistent Wishlist state in localStorage
   const [wishlistItems, setWishlistItems] = useState<WishlistItem[]>(() => {
     try {
       const key = `${STORAGE_WISHLIST_PREFIX}${currentUser ? `user_${currentUser.id}` : `guest_${getOrCreateGuestToken()}`}`;
@@ -78,78 +111,6 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return [];
     }
   });
-
-  // Persistent Orders state
-  const [orders, setOrders] = useState<OrderRecord[]>(() => {
-    try {
-      const key = `${STORAGE_ORDERS_PREFIX}${currentUser ? `user_${currentUser.id}` : `guest_${getOrCreateGuestToken()}`}`;
-      const saved = localStorage.getItem(key);
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
-
-  // ANONYMOUS-TO-AUTHENTICATED CART MIGRATION & MERGE PATTERN
-  // When currentUser changes from guest to authenticated user, merge guest items into user's persistent cart!
-  useEffect(() => {
-    if (!currentUser) return;
-
-    try {
-      const guestKey = `${STORAGE_CART_PREFIX}guest_${guestToken}`;
-      const guestCartRaw = localStorage.getItem(guestKey);
-      
-      const userKey = `${STORAGE_CART_PREFIX}user_${currentUser.id}`;
-      const userCartRaw = localStorage.getItem(userKey);
-      const userCart: CartItem[] = userCartRaw ? JSON.parse(userCartRaw) : [];
-
-      if (guestCartRaw) {
-        const guestCart: CartItem[] = JSON.parse(guestCartRaw);
-
-        if (guestCart.length > 0) {
-          // Merge logic: for matching serviceId in same business, combine quantity. Otherwise append.
-          const merged: CartItem[] = [...userCart];
-          for (const gItem of guestCart) {
-            const existingIdx = merged.findIndex(
-              (m) => m.businessId === gItem.businessId && m.serviceId === gItem.serviceId
-            );
-            if (existingIdx >= 0) {
-              merged[existingIdx].quantity += gItem.quantity;
-            } else {
-              merged.push(gItem);
-            }
-          }
-
-          // Save merged cart under authenticated user's permanent key
-          localStorage.setItem(userKey, JSON.stringify(merged));
-          setCartItems(merged);
-
-          // Remove guest cart to prevent duplicate re-merging
-          localStorage.removeItem(guestKey);
-          return;
-        }
-      }
-
-      // If no guest cart, load user's cart
-      setCartItems(userCart);
-
-      // Load user's wishlist
-      const userWishlistKey = `${STORAGE_WISHLIST_PREFIX}user_${currentUser.id}`;
-      const userWishlistRaw = localStorage.getItem(userWishlistKey);
-      if (userWishlistRaw) {
-        setWishlistItems(JSON.parse(userWishlistRaw));
-      }
-
-      // Load user's orders
-      const userOrdersKey = `${STORAGE_ORDERS_PREFIX}user_${currentUser.id}`;
-      const userOrdersRaw = localStorage.getItem(userOrdersKey);
-      if (userOrdersRaw) {
-        setOrders(JSON.parse(userOrdersRaw));
-      }
-    } catch (err) {
-      console.error('Failed merging guest cart on auth:', err);
-    }
-  }, [currentUser, guestToken]);
 
   // Save Cart to persistent storage whenever cartItems change
   useEffect(() => {
@@ -171,21 +132,37 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [wishlistItems, activeIdentity]);
 
-  // Save Orders to persistent storage whenever orders change
+  // Merge guest cart into user cart on login
   useEffect(() => {
+    if (!currentUser) return;
     try {
-      const key = `${STORAGE_ORDERS_PREFIX}${activeIdentity}`;
-      localStorage.setItem(key, JSON.stringify(orders));
-    } catch (e) {
-      console.error('Failed saving orders to storage:', e);
-    }
-  }, [orders, activeIdentity]);
+      const guestKey = `${STORAGE_CART_PREFIX}guest_${guestToken}`;
+      const guestCartRaw = localStorage.getItem(guestKey);
+      const userKey = `${STORAGE_CART_PREFIX}user_${currentUser.id}`;
+      const userCartRaw = localStorage.getItem(userKey);
+      const userCart: CartItem[] = userCartRaw ? JSON.parse(userCartRaw) : [];
 
-  // Cart Operations
-  const addToCart = useCallback((item: Omit<CartItem, 'id' | 'addedAt'>) => {
+      if (guestCartRaw) {
+        const guestCart: CartItem[] = JSON.parse(guestCartRaw);
+        if (guestCart.length > 0) {
+          setCartItems(guestCart);
+          localStorage.setItem(userKey, JSON.stringify(guestCart));
+          localStorage.removeItem(guestKey);
+          return;
+        }
+      }
+      setCartItems(userCart);
+    } catch (err) {
+      console.error('Failed merging cart on auth:', err);
+    }
+  }, [currentUser, guestToken]);
+
+  // Cart Operations: Multi-store allowed. Items are grouped during checkout.
+  const addToCart = useCallback((item: Omit<CartItem, 'id' | 'addedAt'>): boolean => {
     setCartItems((prev) => {
+      const matchId = item.productId || item.serviceId;
       const existingIdx = prev.findIndex(
-        (ci) => ci.businessId === item.businessId && ci.serviceId === item.serviceId
+        (ci) => ci.businessId === item.businessId && (ci.productId === matchId || ci.serviceId === matchId)
       );
 
       if (existingIdx >= 0) {
@@ -200,6 +177,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       const newItem: CartItem = {
         ...item,
+        productId: item.productId || item.serviceId,
         id: 'ci_' + Math.random().toString(36).substring(2, 9) + '_' + Date.now(),
         addedAt: new Date().toISOString(),
       };
@@ -207,6 +185,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
 
     setIsCartOpen(true);
+    return true;
   }, []);
 
   const updateQuantity = useCallback((cartItemId: string, newQuantity: number) => {
@@ -270,33 +249,23 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return isNowSaved;
   }, []);
 
-  // Fast O(1) Wishlist Lookup Set
-  const wishlistIdSet = useMemo(() => {
-    const set = new Set<string>();
-    for (let i = 0; i < wishlistItems.length; i++) {
-      set.add(wishlistItems[i].businessId);
-    }
-    return set;
+  const isWishlisted = useCallback((businessId: string): boolean => {
+    return wishlistItems.some((w) => w.businessId === businessId);
   }, [wishlistItems]);
 
-  const isWishlisted = useCallback((businessId: string): boolean => {
-    return wishlistIdSet.has(businessId);
-  }, [wishlistIdSet]);
-
-  // Single-Pass O(N) Sizing and Financial Calculations
+  // Calculations for UI preview estimated subtotal (database decides final price & totals)
   const { totalItemCount, subtotal, deliveryFeeTotal, grandTotal } = useMemo(() => {
     let count = 0;
     let sum = 0;
-    const uniqueBizIds = new Set<string>();
-
+    const storeIds = new Set<string>();
     for (let i = 0; i < cartItems.length; i++) {
-      const item = cartItems[i];
-      count += item.quantity;
-      sum += item.price * item.quantity;
-      uniqueBizIds.add(item.businessId);
+      count += cartItems[i].quantity;
+      sum += cartItems[i].price * cartItems[i].quantity;
+      if (cartItems[i].businessId) {
+        storeIds.add(cartItems[i].businessId);
+      }
     }
-
-    const deliveryFee = uniqueBizIds.size * 300; // ₦300 hostel courier fee per unique trader
+    const deliveryFee = storeIds.size > 0 ? storeIds.size * 300 : 0;
     return {
       totalItemCount: count,
       subtotal: sum,
@@ -305,111 +274,124 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, [cartItems]);
 
-  // Place Orders (groups by trader/business and triggers live chat order snippet)
-  const placeOrders = useCallback(async (deliveryDetails: {
-    hostelRoom: string;
+  // Real Supabase Checkout: Splits cart by businessId and calls place_order RPC for each store
+  const checkoutOrder = useCallback(async (details: {
+    deliveryAddress: string;
     phone?: string;
     notes?: string;
-  }): Promise<OrderRecord[]> => {
-    if (cartItems.length === 0) return [];
+    paymentMethod: PaymentMethod;
+  }): Promise<CheckoutResult[]> => {
+    if (cartItems.length === 0) {
+      throw new Error('Your cart is empty.');
+    }
+    if (!isSupabaseConfigured) {
+      throw new Error('Supabase backend not connected.');
+    }
+    if (!currentUser) {
+      throw new Error('Please sign in to place your order.');
+    }
 
-    // Group items by business
-    const grouped = new Map<string, CartItem[]>();
+    const trimmedAddress = details.deliveryAddress.trim();
+    if (trimmedAddress.length < 3) {
+      throw new Error('Delivery address is required (at least 3 characters).');
+    }
+
+    const phoneToUse = details.phone?.trim() || currentUser.whatsapp || '';
+
+    // Group items by businessId
+    const itemsByBusiness = new Map<string, CartItem[]>();
     for (const item of cartItems) {
-      const list = grouped.get(item.businessId) || [];
+      const list = itemsByBusiness.get(item.businessId) || [];
       list.push(item);
-      grouped.set(item.businessId, list);
+      itemsByBusiness.set(item.businessId, list);
     }
 
-    const createdOrders: OrderRecord[] = [];
-    const timestamp = new Date().toISOString();
+    const placedResults: CheckoutResult[] = [];
 
-    for (const [businessId, items] of grouped.entries()) {
-      const first = items[0];
-      const itemsSubtotal = items.reduce((acc, i) => acc + i.price * i.quantity, 0);
-      const deliveryFee = 300;
-      const orderTotal = itemsSubtotal + deliveryFee;
-
-      const orderNumber = 'CF-' + Math.floor(100000 + Math.random() * 900000);
-      const orderRecord: OrderRecord = {
-        id: 'ord_' + Math.random().toString(36).substring(2, 9) + '_' + Date.now(),
-        orderNumber,
-        buyerId: currentUser ? currentUser.id : `guest_${guestToken}`,
-        buyerName: currentUser ? currentUser.fullName : 'Guest Student',
-        buyerEmail: currentUser?.email,
-        buyerHostelRoom: deliveryDetails.hostelRoom,
-        buyerPhone: deliveryDetails.phone || currentUser?.whatsapp,
-        businessId,
-        businessName: first.businessName,
-        traderHostel: first.traderHostel,
-        items: items.map((i) => ({ name: i.name, quantity: i.quantity, price: i.price })),
-        totalAmount: itemsSubtotal,
-        deliveryFee,
-        grandTotal: orderTotal,
-        status: 'placed',
-        createdAt: timestamp,
-        notes: deliveryDetails.notes,
-      };
-
-      createdOrders.push(orderRecord);
-
-      // Trigger chat message / order snippet directly with the trader!
-      try {
-        const orderSummaryText = `🛒 *New Campus Foundry Order #${orderNumber}*\n` +
-          `Hostel Delivery to: *${deliveryDetails.hostelRoom}*\n` +
-          `Items:\n${items.map((i) => `• ${i.quantity}x ${i.name} (₦${(i.price * i.quantity).toLocaleString()})`).join('\n')}\n` +
-          `Delivery Fee: ₦${deliveryFee.toLocaleString()}\n` +
-          `*Total Payable:* ₦${orderTotal.toLocaleString()}\n` +
-          (deliveryDetails.notes ? `Note: ${deliveryDetails.notes}` : '');
-
-        openChatWithBusiness(
-          {
-            id: businessId,
-            name: first.businessName,
-            imageUrl: first.businessImageUrl || '',
-            hostelLocation: first.traderHostel || 'UNILORIN Hostels',
-            ownerName: first.businessName,
-            whatsapp: first.businessWhatsapp || '08012345678',
-            category: 'Campus Service',
-            startingPrice: orderTotal,
-            services: [],
-            rating: 5,
-            reviewsCount: 1,
-            verifiedStudent: true,
-            acceptsHostelDelivery: true,
-            campus: 'Permanent Site',
-            studentDept: 'Student Trade',
-            studentLevel: '300L',
-            tagline: 'Student Vendor',
-            description: 'Campus Foundry Trader',
-            university: 'University of Ilorin',
-          },
-          orderSummaryText,
-          {
-            items: items.map((i) => ({ name: i.name, quantity: i.quantity, price: i.price })),
-            totalAmount: orderTotal,
-            deliveryRoom: deliveryDetails.hostelRoom,
-            status: 'pending',
-          }
-        );
-      } catch (err) {
-        console.warn('Could not post order snippet to chat:', err);
+    for (const [bizId, bizItems] of itemsByBusiness.entries()) {
+      // Guard: trader must not be able to order from their own store
+      if (currentUser.businessProfileId === bizId) {
+        emitAppToast('This is your own store', 'error');
+        throw new Error('This is your own store');
       }
+
+      try {
+        const { data: biz } = await supabase
+          .from('student_businesses')
+          .select('owner_id')
+          .eq('id', bizId)
+          .maybeSingle();
+
+        if (biz && biz.owner_id === currentUser.id) {
+          emitAppToast('This is your own store', 'error');
+          throw new Error('This is your own store');
+        }
+      } catch (err: unknown) {
+        if (err instanceof Error && err.message === 'This is your own store') {
+          throw err;
+        }
+      }
+
+      const bizName = bizItems[0].businessName || 'Campus Store';
+      const itemsPayload = bizItems.map((ci) => ({
+        productId: (ci.productId || ci.serviceId)!,
+        quantity: ci.quantity,
+      }));
+
+      // 1. Call database place_order RPC (sends ONLY product_id and quantity; database sets price)
+      let orderId: string;
+      try {
+        orderId = await apiPlaceOrder({
+          businessId: bizId,
+          items: itemsPayload,
+          deliveryAddress: trimmedAddress,
+          phone: phoneToUse,
+          notes: details.notes?.trim() || undefined,
+          paymentMethod: details.paymentMethod,
+        });
+      } catch (placeErr: unknown) {
+        const mapped = mapMarketplaceError(placeErr);
+        emitAppToast(mapped, 'error');
+        throw new Error(mapped);
+      }
+
+      // 2. Fetch placed order details from DB (order_number, grand_total, delivery_fee, order_secrets delivery_pin, bank details)
+      const placedDetails = await fetchOrderPlacedDetails(orderId);
+
+      const itemsSnapshot = [...bizItems];
+      const estSubtotal = itemsSnapshot.reduce((sum, i) => sum + i.price * i.quantity, 0);
+
+      placedResults.push({
+        orderId,
+        orderNumber: placedDetails?.orderNumber || orderId.slice(0, 8).toUpperCase(),
+        deliveryPin: placedDetails?.deliveryPin || null,
+        businessId: bizId,
+        businessName: bizName,
+        subtotal: placedDetails?.subtotal ?? estSubtotal,
+        deliveryFee: placedDetails?.deliveryFee ?? 0,
+        grandTotal: placedDetails?.grandTotal ?? estSubtotal,
+        totalAmount: placedDetails?.grandTotal ?? estSubtotal,
+        deliveryAddress: trimmedAddress,
+        phone: phoneToUse,
+        notes: details.notes,
+        paymentMethod: details.paymentMethod,
+        paymentStatus: placedDetails?.paymentStatus || 'pending',
+        bankDetails: placedDetails?.bankDetails,
+        items: itemsSnapshot,
+      });
     }
 
-    // Save orders to history and clear active cart
-    setOrders((prev) => [...createdOrders, ...prev]);
+    // Clear cart after placing all orders
     setCartItems([]);
     setIsCartOpen(false);
 
-    return createdOrders;
-  }, [cartItems, currentUser, guestToken, openChatWithBusiness]);
+    return placedResults;
+  }, [cartItems, currentUser]);
 
   const contextValue = useMemo(
     () => ({
       cartItems,
       wishlistItems,
-      orders,
       isCartOpen,
       setIsCartOpen,
       addToCart,
@@ -423,12 +405,11 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
       grandTotal,
       toggleWishlist,
       isWishlisted,
-      placeOrders,
+      checkoutOrder,
     }),
     [
       cartItems,
       wishlistItems,
-      orders,
       isCartOpen,
       addToCart,
       updateQuantity,
@@ -441,7 +422,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
       grandTotal,
       toggleWishlist,
       isWishlisted,
-      placeOrders,
+      checkoutOrder,
     ]
   );
 
@@ -459,3 +440,4 @@ export const useCart = () => {
   }
   return context;
 };
+

@@ -3,7 +3,6 @@ import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import path from 'path';
 import { chatWebSocketPlugin } from './src/server/chatPlugin';
-import { unilorinAuthPlugin } from './src/server/unilorinAuthPlugin';
 
 // https://vitejs.dev/config/
 export default defineConfig({
@@ -11,7 +10,6 @@ export default defineConfig({
     react(),
     tailwindcss(),
     chatWebSocketPlugin(),
-    unilorinAuthPlugin(),
   ],
   resolve: {
     alias: {

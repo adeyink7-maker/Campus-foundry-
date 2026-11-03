@@ -32,6 +32,7 @@ interface CampusFeedViewProps {
   onNavigateModule: (mod: AppModule) => void;
   onOpenAuthorProfile?: (authorId: string, authorDetails?: any) => void;
   onDeletePost?: (postId: string) => void;
+  onRequireAuth?: (action?: () => void) => void;
 }
 
 const FEED_CATEGORIES = [
@@ -57,6 +58,7 @@ export const CampusFeedView = ({
   onNavigateModule,
   onOpenAuthorProfile,
   onDeletePost,
+  onRequireAuth,
 }: CampusFeedViewProps) => {
   const { currentUser } = useAuth();
   const [activeCategory, setActiveCategory] = useState<string>('All Buzz');
@@ -151,8 +153,8 @@ export const CampusFeedView = ({
 
       {/* 3. Filter Category Pills & Search */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        {/* Category Pills */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+        {/* Category Pills - min 44px touch targets */}
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
           {FEED_CATEGORIES.map((cat) => {
             const isSelected = activeCategory === cat;
             return (
@@ -160,10 +162,10 @@ export const CampusFeedView = ({
                 key={cat}
                 type="button"
                 onClick={() => setActiveCategory(cat)}
-                className={`rounded-xl px-3 py-1.5 text-xs font-semibold whitespace-nowrap transition-all cursor-pointer border ${
+                className={`min-h-[44px] rounded-xl px-4 py-2.5 text-xs font-semibold whitespace-nowrap transition-all cursor-pointer border ${
                   isSelected
-                    ? 'bg-emerald-600 text-white border-emerald-500 shadow-md shadow-emerald-950/40'
-                    : 'bg-neutral-900 text-neutral-400 border-neutral-800 hover:border-neutral-700 hover:text-neutral-200'
+                    ? 'bg-orange-500 text-neutral-950 border-orange-400 font-bold shadow-md shadow-orange-950/40'
+                    : 'bg-neutral-900/80 text-neutral-300 border-neutral-800 hover:border-neutral-700 hover:text-white'
                 }`}
               >
                 {cat}
@@ -174,37 +176,37 @@ export const CampusFeedView = ({
 
         {/* Sort & Search Controls */}
         <div className="flex items-center gap-2 shrink-0">
-          <div className="relative flex-1 sm:w-48">
-            <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-neutral-500" />
+          <div className="relative flex-1 sm:w-48 min-h-[44px] flex items-center">
+            <Search className="absolute left-3 top-3.5 h-4 w-4 text-neutral-400" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search feed..."
-              className="w-full rounded-xl border border-neutral-800 bg-neutral-950 pl-8 pr-3 py-1.5 text-xs text-white placeholder-neutral-500 focus:border-emerald-500 focus:outline-none"
+              className="w-full min-h-[44px] rounded-xl border border-neutral-800 bg-neutral-950 pl-9 pr-3 py-2 text-xs text-white placeholder-neutral-400 focus:border-orange-500 focus:outline-none"
             />
           </div>
 
-          <div className="flex items-center rounded-xl border border-neutral-800 bg-neutral-900 p-1">
+          <div className="flex items-center rounded-xl border border-neutral-800 bg-neutral-900 p-1 min-h-[44px]">
             <button
               type="button"
               onClick={() => setSortOrder('latest')}
-              className={`rounded-lg p-1.5 transition-colors ${
-                sortOrder === 'latest' ? 'bg-neutral-800 text-emerald-400' : 'text-neutral-400 hover:text-white'
+              className={`min-h-[38px] min-w-[38px] flex items-center justify-center rounded-lg p-2 transition-colors ${
+                sortOrder === 'latest' ? 'bg-neutral-800 text-orange-400 font-bold' : 'text-neutral-300 hover:text-white'
               }`}
               title="Latest Posts"
             >
-              <Clock className="h-3.5 w-3.5" />
+              <Clock className="h-4 w-4" />
             </button>
             <button
               type="button"
               onClick={() => setSortOrder('popular')}
-              className={`rounded-lg p-1.5 transition-colors ${
-                sortOrder === 'popular' ? 'bg-neutral-800 text-amber-400' : 'text-neutral-400 hover:text-white'
+              className={`min-h-[38px] min-w-[38px] flex items-center justify-center rounded-lg p-2 transition-colors ${
+                sortOrder === 'popular' ? 'bg-neutral-800 text-orange-400 font-bold' : 'text-neutral-300 hover:text-white'
               }`}
               title="Most Popular"
             >
-              <Flame className="h-3.5 w-3.5" />
+              <Flame className="h-4 w-4" />
             </button>
           </div>
         </div>
@@ -232,12 +234,13 @@ export const CampusFeedView = ({
                   faculty: post.authorFaculty,
                 })
               }
+              onRequireAuth={onRequireAuth}
             />
           ))
         ) : (
           <div className="rounded-2xl border border-dashed border-neutral-800 bg-neutral-900/30 p-10 text-center space-y-3">
             <Compass className="h-8 w-8 text-neutral-500 mx-auto" />
-            <h3 className="text-sm font-bold text-white">No posts matching your filters</h3>
+            <h3 className="text-sm font-bold text-white">Nothing here yet</h3>
             <p className="text-xs text-neutral-400 max-w-sm mx-auto">
               Be the first to share an academic inquiry, hostel update, or trade promo for this category!
             </p>

@@ -1,12 +1,69 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { GraduationCap, ShieldCheck, ArrowRight } from 'lucide-react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ChatProvider } from './context/ChatContext';
+import { MarketplaceChatProvider } from './context/MarketplaceChatContext';
 import { CartProvider } from './context/CartContext';
 import { PlayerCardProvider } from './context/PlayerCardContext';
 import { PlayerCardOverlay } from './components/playercard/PlayerCardOverlay';
 import { PlayerCardEditorModal } from './components/playercard/PlayerCardEditorModal';
 import { RootNavigator } from './mobile/navigation/RootNavigator';
+
+function WelcomeLandingScreen({ onOpenAuth }: { onOpenAuth: () => void }) {
+  return (
+    <div className="min-h-screen w-full bg-neutral-950 flex flex-col items-center justify-center p-6 text-white relative overflow-hidden">
+      {/* Background ambient glow */}
+      <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-blue-600/20 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute bottom-1/4 left-1/3 -translate-x-1/2 -translate-y-1/2 w-80 h-80 bg-emerald-600/15 rounded-full blur-3xl pointer-events-none" />
+
+      <div className="relative z-10 max-w-xl w-full mx-auto text-center space-y-6">
+        <div className="inline-flex items-center gap-2.5 px-4 py-2 rounded-2xl bg-blue-500/10 border border-blue-500/30 text-blue-300 text-xs font-bold tracking-wide uppercase">
+          <GraduationCap className="h-4 w-4 text-blue-400" />
+          <span>CAMPUS FOUNDRY • STUDENT COMMUNITY & MARKETPLACE</span>
+        </div>
+
+        <h1 className="text-3xl sm:text-5xl font-black tracking-tight leading-tight">
+          The Ultimate Campus Foundry <span className="bg-gradient-to-r from-blue-400 via-sky-300 to-emerald-400 bg-clip-text text-transparent">Student Hub & Marketplace</span>
+        </h1>
+
+        <p className="text-sm sm:text-base text-neutral-300 leading-relaxed max-w-lg mx-auto">
+          Connect with campus peers, order food & hostel deliveries from verified student vendors, share 24h snaps, and trade easily across campus.
+        </p>
+
+        <div className="pt-4 space-y-3">
+          <button
+            onClick={onOpenAuth}
+            className="w-full sm:w-auto inline-flex items-center justify-center gap-3 px-8 py-4 rounded-2xl bg-gradient-to-r from-blue-600 via-indigo-600 to-emerald-600 hover:from-blue-500 hover:to-emerald-500 font-bold text-sm sm:text-base shadow-xl shadow-blue-950/50 transition-all transform hover:scale-[1.02] cursor-pointer"
+          >
+            <ShieldCheck className="h-5 w-5" />
+            <span>Sign in with Student Webmail</span>
+            <ArrowRight className="h-5 w-5" />
+          </button>
+
+          <p className="text-xs text-neutral-400">
+            Verified securely via student webmail OTP.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-3 gap-3 pt-8 border-t border-neutral-800/80 text-left">
+          <div className="p-3 rounded-xl bg-neutral-900/60 border border-neutral-800/80">
+            <span className="text-xs font-bold text-white block mb-1">Verified OTP</span>
+            <span className="text-[11px] text-neutral-400 leading-snug block">Student identity verification guarantee.</span>
+          </div>
+          <div className="p-3 rounded-xl bg-neutral-900/60 border border-neutral-800/80">
+            <span className="text-xs font-bold text-white block mb-1">Hostel Delivery</span>
+            <span className="text-[11px] text-neutral-400 leading-snug block">Direct dispatch to your hostel block.</span>
+          </div>
+          <div className="p-3 rounded-xl bg-neutral-900/60 border border-neutral-800/80">
+            <span className="text-xs font-bold text-white block mb-1">ID Card Studio</span>
+            <span className="text-[11px] text-neutral-400 leading-snug block">World Cup style student player cards.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // Components
 import { DynamicMotivationBanner } from './components/DynamicMotivationBanner';
@@ -27,21 +84,19 @@ import { CreateBusinessModal } from './components/CreateBusinessModal';
 import { BecomeTraderModal } from './components/BecomeTraderModal';
 import { AuthModal } from './components/AuthModal';
 import { ChatDrawer } from './components/ChatDrawer';
+import { MarketplaceChatDrawer } from './components/MarketplaceChatDrawer';
 import { CartDrawer } from './components/CartDrawer';
 import { SnapViewerModal } from './components/SnapViewerModal';
 import { CreateSnapModal } from './components/CreateSnapModal';
 import { CreatePostModal } from './components/CreatePostModal';
 
 // Mock Data & Types
-import { INITIAL_BUSINESSES } from './data/mockData';
-import { INITIAL_CAMPUS_POSTS, INITIAL_CAMPUS_SNAPS } from './data/socialMockData';
 import { 
   AppModule, 
   StudentLevel, 
   StudentBusiness, 
   CampusPost, 
   CampusSnap, 
-  BusinessBlueprint, 
   UserRole,
   AppUser
 } from './types';
@@ -59,6 +114,8 @@ import {
   deleteStudentBusinessInSupabase,
   fetchCampusSnapsFromSupabase,
   createCampusSnapInSupabase,
+  resetDatabaseToZero,
+  deletePostsByUserInSupabase,
 } from './services/supabase';
 
 const STORAGE_BUSINESSES_KEY = 'campus_foundry_custom_businesses_v4';
@@ -66,13 +123,31 @@ const STORAGE_POSTS_KEY = 'campus_foundry_posts_v4';
 const STORAGE_SNAPS_KEY = 'campus_foundry_snaps_v4';
 
 function MainApp() {
-  const { currentUser } = useAuth();
+  const { currentUser, isLoading } = useAuth();
   const [viewMode, setViewMode] = useState<'web' | 'mobile'>('mobile');
 
-  // Active Ecosystem Module ('feed', 'marketplace', 'politics', 'academics', 'clubs', 'news', 'map', 'dashboard')
+  // Pending action ref to return user to what they were doing after sign in
+  const pendingActionRef = useRef<(() => void) | null>(null);
+
+  // Modals & Active Selections
+  const [selectedBusiness, setSelectedBusiness] = useState<StudentBusiness | null>(null);
+  const [activeTraderBusiness, setActiveTraderBusiness] = useState<StudentBusiness | null>(null);
+  const [selectedSnap, setSelectedSnap] = useState<CampusSnap | null>(null);
+  const [targetProfileUser, setTargetProfileUser] = useState<AppUser | null>(null);
+  const [isCreateSnapOpen, setIsCreateSnapOpen] = useState(false);
+  const [isCreatePostOpen, setIsCreatePostOpen] = useState(false);
+  const [isCreateBusinessOpen, setIsCreateBusinessOpen] = useState(false);
+  const [isBecomeTraderOpen, setIsBecomeTraderOpen] = useState(false);
+  const [isAuthOpen, setIsAuthOpen] = useState(false);
+  const [authRole, setAuthRole] = useState<UserRole>('student');
+
+  // Toast State
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Active Ecosystem Module
   const [currentModule, setCurrentModule] = useState<AppModule>('feed');
 
-  // Academic Class Year Filter ('All', '100L', '200L', '300L', '400L', '500L')
+  // Academic Class Year Filter
   const [selectedLevel, setSelectedLevel] = useState<StudentLevel | 'All'>('All');
 
   // Marketplace State
@@ -80,44 +155,81 @@ function MainApp() {
   const [selectedCampus, setSelectedCampus] = useState('All');
 
   // Business Data State
-  const [businesses, setBusinesses] = useState<StudentBusiness[]>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_BUSINESSES_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-    } catch (e) {
-      console.error('Error loading businesses from storage:', e);
-    }
-    return INITIAL_BUSINESSES;
-  });
+  const [businesses, setBusinesses] = useState<StudentBusiness[]>([]);
+  const [isLoadingBusinesses, setIsLoadingBusinesses] = useState(true);
+  const [businessesError, setBusinessesError] = useState<string | null>(null);
 
   // Social Posts Data State
-  const [posts, setPosts] = useState<CampusPost[]>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_POSTS_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-    } catch {}
-    return INITIAL_CAMPUS_POSTS;
-  });
+  const [posts, setPosts] = useState<CampusPost[]>([]);
 
   // Campus Snaps Data State
-  const [snaps, setSnaps] = useState<CampusSnap[]>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_SNAPS_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-    } catch {}
-    return INITIAL_CAMPUS_SNAPS;
-  });
+  const [snaps, setSnaps] = useState<CampusSnap[]>([]);
 
-  // Synchronize data from Supabase backend on mount
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 4000);
+  };
+
+  const handleOpenAuth = (action?: (() => void) | any, role: UserRole = 'student') => {
+    if (typeof action === 'function') {
+      pendingActionRef.current = action;
+    }
+    setAuthRole(role);
+    setIsAuthOpen(true);
+  };
+
+  const handleAuthSuccess = () => {
+    showToast(`Welcome! You are now signed in to UNILORIN Campus Foundry.`);
+    if (pendingActionRef.current) {
+      const act = pendingActionRef.current;
+      pendingActionRef.current = null;
+      act();
+    }
+  };
+
+  // Load real student_businesses from Supabase
+  const loadBusinesses = useCallback(async () => {
+    setIsLoadingBusinesses(true);
+    setBusinessesError(null);
+    try {
+      const remote = await fetchStudentBusinessesFromSupabase();
+      setBusinesses(remote);
+      try {
+        localStorage.setItem(STORAGE_BUSINESSES_KEY, JSON.stringify(remote));
+      } catch {}
+    } catch (err: any) {
+      console.warn('[Supabase loadBusinesses Error]:', err);
+      setBusinessesError('Unable to load campus traders. Please check your connection and try again.');
+    } finally {
+      setIsLoadingBusinesses(false);
+    }
+  }, []);
+
+  // Hooks
+  useEffect(() => {
+    const handleCampusToast = (e: Event) => {
+      const detail = (e as CustomEvent)?.detail;
+      if (detail?.message) {
+        showToast(detail.message);
+      }
+    };
+    window.addEventListener('campus-toast', handleCampusToast);
+    return () => window.removeEventListener('campus-toast', handleCampusToast);
+  }, []);
+
+  useEffect(() => {
+    const HAS_RESET_LAUNCH_KEY = 'campus_foundry_system_reset_v1';
+    if (!localStorage.getItem(HAS_RESET_LAUNCH_KEY)) {
+      resetDatabaseToZero().then(() => {
+        localStorage.setItem(HAS_RESET_LAUNCH_KEY, 'true');
+        loadBusinesses();
+      });
+    } else {
+      loadBusinesses();
+    }
+  }, [loadBusinesses]);
+
+  // Synchronize social posts & snaps data from Supabase backend
   useEffect(() => {
     if (!isSupabaseConfigured) return;
 
@@ -125,34 +237,36 @@ function MainApp() {
 
     async function syncSupabaseData() {
       try {
-        const [remotePosts, remoteBusinesses, remoteSnaps] = await Promise.all([
+        await Promise.all([
+          deletePostsByUserInSupabase('adeyiink7'),
+          deletePostsByUserInSupabase('adeyink7'),
+        ]);
+
+        const [remotePosts, remoteSnaps] = await Promise.all([
           fetchCampusPostsFromSupabase(),
-          fetchStudentBusinessesFromSupabase(),
           fetchCampusSnapsFromSupabase(),
         ]);
 
         if (!isMounted) return;
 
-        if (remotePosts.length > 0) {
-          setPosts(remotePosts);
-          try {
-            localStorage.setItem(STORAGE_POSTS_KEY, JSON.stringify(remotePosts));
-          } catch {}
-        }
+        const filteredPosts = (remotePosts || []).filter((p) => {
+          const user = (p.authorUsername || '').toLowerCase();
+          const name = (p.authorName || '').toLowerCase();
+          const id = (p.authorId || '').toLowerCase();
+          return !user.includes('adeyiink7') && !user.includes('adeyink7') &&
+                 !name.includes('adeyiink7') && !name.includes('adeyink7') &&
+                 !id.includes('adeyiink7') && !id.includes('adeyink7');
+        });
 
-        if (remoteBusinesses.length > 0) {
-          setBusinesses(remoteBusinesses);
-          try {
-            localStorage.setItem(STORAGE_BUSINESSES_KEY, JSON.stringify(remoteBusinesses));
-          } catch {}
-        }
+        setPosts(filteredPosts);
+        try {
+          localStorage.setItem(STORAGE_POSTS_KEY, JSON.stringify(filteredPosts));
+        } catch {}
 
-        if (remoteSnaps.length > 0) {
-          setSnaps(remoteSnaps);
-          try {
-            localStorage.setItem(STORAGE_SNAPS_KEY, JSON.stringify(remoteSnaps));
-          } catch {}
-        }
+        setSnaps(remoteSnaps || []);
+        try {
+          localStorage.setItem(STORAGE_SNAPS_KEY, JSON.stringify(remoteSnaps || []));
+        } catch {}
       } catch (err) {
         console.warn('[Supabase Sync] Background data load warning:', err);
       }
@@ -165,18 +279,68 @@ function MainApp() {
     };
   }, []);
 
-  // Modals & Active Selections
-  const [selectedBusiness, setSelectedBusiness] = useState<StudentBusiness | null>(null);
-  const [activeTraderBusiness, setActiveTraderBusiness] = useState<StudentBusiness | null>(null);
-  const [selectedSnap, setSelectedSnap] = useState<CampusSnap | null>(null);
-  const [targetProfileUser, setTargetProfileUser] = useState<AppUser | null>(null);
-  const [isCreateSnapOpen, setIsCreateSnapOpen] = useState(false);
-  const [isCreatePostOpen, setIsCreatePostOpen] = useState(false);
-  const [isCreateBusinessOpen, setIsCreateBusinessOpen] = useState(false);
-  const [isBecomeTraderOpen, setIsBecomeTraderOpen] = useState(false);
-  const [isAuthOpen, setIsAuthOpen] = useState(false);
-  const [authMode, setAuthMode] = useState<'signin' | 'signup' | 'unilorin-otp'>('unilorin-otp');
-  const [authRole, setAuthRole] = useState<UserRole>('student');
+  const handleNextSnap = useCallback(() => {
+    setSelectedSnap((current) => {
+      if (!current) return null;
+      const currentIndex = snaps.findIndex((s) => s.id === current.id);
+      if (currentIndex >= 0 && currentIndex < snaps.length - 1) {
+        return snaps[currentIndex + 1];
+      }
+      return null;
+    });
+  }, [snaps]);
+
+  const handlePrevSnap = useCallback(() => {
+    setSelectedSnap((current) => {
+      if (!current) return null;
+      const currentIndex = snaps.findIndex((s) => s.id === current.id);
+      if (currentIndex > 0) {
+        return snaps[currentIndex - 1];
+      }
+      return current;
+    });
+  }, [snaps]);
+
+  const userOwnedBusinesses = useMemo(() => {
+    if (!currentUser) return [];
+    return businesses.filter(
+      (b) => b.ownerId === currentUser.id || (b.ownerEmail && currentUser.email && b.ownerEmail.toLowerCase() === currentUser.email.toLowerCase())
+    );
+  }, [businesses, currentUser]);
+
+
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen w-full bg-neutral-950 flex items-center justify-center">
+        <div className="flex flex-col items-center gap-3">
+          <span className="h-8 w-8 animate-spin rounded-full border-4 border-blue-500 border-t-transparent" />
+          <span className="text-xs text-neutral-400 font-medium">Loading UNILORIN Campus Foundry...</span>
+        </div>
+      </div>
+    );
+  }
+
+  // Signed-out users see a welcome screen with sign-in.
+  if (!currentUser) {
+    return (
+      <>
+        <WelcomeLandingScreen onOpenAuth={() => handleOpenAuth()} />
+        <AuthModal
+          isOpen={isAuthOpen}
+          onClose={() => setIsAuthOpen(false)}
+          defaultRole={authRole}
+          onSuccess={handleAuthSuccess}
+        />
+        {toastMessage && (
+          <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-2xl border border-emerald-500/30 bg-neutral-900/95 px-5 py-3.5 text-xs sm:text-sm font-semibold text-white shadow-2xl backdrop-blur-md animate-in slide-in-from-bottom-5">
+            <span className="flex h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span>{toastMessage}</span>
+          </div>
+        )}
+      </>
+    );
+  }
 
   const handleViewUserProfile = (authorId?: string, authorDetails?: any) => {
     if (currentUser && authorId === currentUser.id) {
@@ -205,27 +369,8 @@ function MainApp() {
     setCurrentModule('dashboard');
   };
 
-  // Toast State
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
-
-  const showToast = (msg: string) => {
-    setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 3500);
-  };
-
-  const handleOpenAuth = (mode: 'signin' | 'signup' | 'unilorin-otp' = 'unilorin-otp', role: UserRole = 'student') => {
-    setAuthMode(mode);
-    setAuthRole(role);
-    setIsAuthOpen(true);
-  };
-
   // Guarded Create Business Action
   const handleOpenCreateBusiness = () => {
-    if (!currentUser) {
-      showToast('Please sign in or create a verified trader account to list and manage your trade.');
-      handleOpenAuth('signup', 'trader');
-      return;
-    }
     if (currentUser.accountType !== 'TRADER' && currentUser.role !== 'trader') {
       setIsBecomeTraderOpen(true);
       return;
@@ -274,7 +419,6 @@ function MainApp() {
   };
 
   const handleClaimBusiness = (bizId: string) => {
-    if (!currentUser) return;
     setBusinesses((prev) => {
       const updated = prev.map((b) => {
         if (b.id === bizId) {
@@ -297,7 +441,6 @@ function MainApp() {
     showToast('Trade successfully linked to your verified account!');
   };
 
-  // Social Post Actions
   const handleLikeToggle = (postId: string) => {
     setPosts((prev) => {
       const updated = prev.map((p) => {
@@ -321,12 +464,6 @@ function MainApp() {
   };
 
   const handleAddComment = (postId: string, commentText: string) => {
-    if (!currentUser) {
-      showToast('Please sign in to comment on campus posts.');
-      handleOpenAuth('signin');
-      return;
-    }
-
     const newComment = {
       id: `c_${Date.now()}`,
       postId,
@@ -361,16 +498,31 @@ function MainApp() {
     showToast('Comment published.');
   };
 
-  const handlePostCreated = (newPost: CampusPost) => {
-    setPosts((prev) => {
-      const updated = [newPost, ...prev];
-      try {
-        localStorage.setItem(STORAGE_POSTS_KEY, JSON.stringify(updated));
-      } catch {}
-      return updated;
-    });
-    createCampusPostInSupabase(newPost);
-    showToast('Your post is live on the UNILORIN Campus Feed!');
+  const handlePostCreated = async (newPost: CampusPost) => {
+    try {
+      const saved = await createCampusPostInSupabase(newPost);
+      
+      const remotePosts = await fetchCampusPostsFromSupabase();
+      if (remotePosts && remotePosts.length > 0) {
+        setPosts(remotePosts);
+        try {
+          localStorage.setItem(STORAGE_POSTS_KEY, JSON.stringify(remotePosts));
+        } catch {}
+      } else {
+        setPosts((prev) => {
+          const updated = [saved, ...prev.filter((p) => p.id !== saved.id)];
+          try {
+            localStorage.setItem(STORAGE_POSTS_KEY, JSON.stringify(updated));
+          } catch {}
+          return updated;
+        });
+      }
+
+      showToast('Your post is live on the UNILORIN Campus Feed!');
+    } catch (err: any) {
+      console.error('[handlePostCreated Failure]:', err);
+      throw err;
+    }
   };
 
   const handleDeletePost = (postId: string) => {
@@ -385,48 +537,34 @@ function MainApp() {
     showToast('Post deleted successfully.');
   };
 
-  // Campus Snap Actions
-  const handleSnapCreated = (newSnap: CampusSnap) => {
-    setSnaps((prev) => {
-      const updated = [newSnap, ...prev];
-      try {
-        localStorage.setItem(STORAGE_SNAPS_KEY, JSON.stringify(updated));
-      } catch {}
-      return updated;
-    });
-    createCampusSnapInSupabase(newSnap);
-    showToast('Campus Snap published for 24 hours!');
+  const handleSnapCreated = async (newSnap: CampusSnap) => {
+    try {
+      const saved = await createCampusSnapInSupabase(newSnap);
+      
+      const remoteSnaps = await fetchCampusSnapsFromSupabase();
+      if (remoteSnaps && remoteSnaps.length > 0) {
+        setSnaps(remoteSnaps);
+        try {
+          localStorage.setItem(STORAGE_SNAPS_KEY, JSON.stringify(remoteSnaps));
+        } catch {}
+      } else {
+        setSnaps((prev) => {
+          const updated = [saved, ...prev.filter((s) => s.id !== saved.id)];
+          try {
+            localStorage.setItem(STORAGE_SNAPS_KEY, JSON.stringify(updated));
+          } catch {}
+          return updated;
+        });
+      }
+
+      showToast('Campus Snap published for 24 hours!');
+    } catch (err: any) {
+      console.error('[handleSnapCreated Failure]:', err);
+      throw err;
+    }
   };
 
-  const handleNextSnap = useCallback(() => {
-    setSelectedSnap((current) => {
-      if (!current) return null;
-      const currentIndex = snaps.findIndex((s) => s.id === current.id);
-      if (currentIndex >= 0 && currentIndex < snaps.length - 1) {
-        return snaps[currentIndex + 1];
-      }
-      return null;
-    });
-  }, [snaps]);
 
-  const handlePrevSnap = useCallback(() => {
-    setSelectedSnap((current) => {
-      if (!current) return null;
-      const currentIndex = snaps.findIndex((s) => s.id === current.id);
-      if (currentIndex > 0) {
-        return snaps[currentIndex - 1];
-      }
-      return current;
-    });
-  }, [snaps]);
-
-  // Current user's businesses for tagging
-  const userOwnedBusinesses = useMemo(() => {
-    if (!currentUser) return [];
-    return businesses.filter(
-      (b) => b.ownerId === currentUser.id || (b.ownerEmail && currentUser.email && b.ownerEmail.toLowerCase() === currentUser.email.toLowerCase())
-    );
-  }, [businesses, currentUser]);
 
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100 flex flex-col font-sans relative">
@@ -457,10 +595,12 @@ function MainApp() {
           showToast={showToast}
           onSwitchToWeb={() => setViewMode('web')}
           onViewUserProfile={handleViewUserProfile}
+          isLoadingBusinesses={isLoadingBusinesses}
+          businessesError={businessesError}
+          onRetryBusinesses={loadBusinesses}
         />
       ) : (
         <>
-          {/* Floating Toggle to switch to Mobile App View */}
           <div className="fixed top-3 right-3 z-50 flex items-center gap-2">
             <button
               type="button"
@@ -468,20 +608,17 @@ function MainApp() {
               className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-neutral-900/90 hover:bg-neutral-800 text-amber-400 border border-amber-500/40 text-xs font-bold shadow-2xl backdrop-blur-md transition-all hover:scale-105"
             >
               <span>📱</span>
-              <span className="hidden xs:inline sm:inline">Switch to </span><span>Mobile App (Expo)</span>
+              <span className="hidden xs:inline sm:inline">Switch to </span><span>Mobile View</span>
             </button>
           </div>
           
-          {/* 1. TOP DYNAMIC OVERHEAD MOTIVATIONAL BANNER WITH GESTURES & BACKDROP */}
           <DynamicMotivationBanner
             currentModule={currentModule}
             onNavigateModule={(mod) => setCurrentModule(mod)}
           />
 
-          {/* 2. MAIN THREE-PANEL ECOSYSTEM LAYOUT */}
           <div className="flex-1 flex flex-col lg:flex-row w-full max-w-[1600px] mx-auto">
         
-        {/* LEFT COLLAPSIBLE NAVIGATION SIDE PANEL */}
         <SidebarNav
           currentModule={currentModule}
           onSelectModule={(mod) => setCurrentModule(mod)}
@@ -491,7 +628,6 @@ function MainApp() {
           onOpenAuth={handleOpenAuth}
         />
 
-        {/* CENTER DYNAMIC MAIN CONTENT VIEW */}
         <main className="flex-1 min-w-0 px-4 sm:px-6 lg:px-8 py-6">
           <AnimatePresence mode="wait">
             <motion.div
@@ -501,7 +637,6 @@ function MainApp() {
               exit={{ opacity: 0, y: -8 }}
               transition={{ duration: 0.22, ease: 'easeOut' }}
             >
-              {/* Module 1: Main Campus Feed */}
               {currentModule === 'feed' && (
                 <CampusFeedView
                   posts={posts}
@@ -520,7 +655,6 @@ function MainApp() {
                 />
               )}
 
-              {/* Module 2: Campus Marketplace & Student Ventures */}
               {currentModule === 'marketplace' && (
                 <MarketplaceView
                   businesses={businesses}
@@ -537,17 +671,18 @@ function MainApp() {
                   onOpenTraderProfile={(biz) => setActiveTraderBusiness(biz)}
                   onClearTraderBusiness={() => setActiveTraderBusiness(null)}
                   onUpdateBusiness={handleBusinessUpdated}
+                  isLoadingBusinesses={isLoadingBusinesses}
+                  businessesError={businessesError}
+                  onRetryBusinesses={loadBusinesses}
                 />
               )}
 
-              {/* Module 3: Student Politics & SUG Hub */}
               {currentModule === 'politics' && (
                 <PoliticsCampaignView
-                  onRequireAuth={() => handleOpenAuth('signin')}
+                  onRequireAuth={() => handleOpenAuth()}
                 />
               )}
 
-              {/* Module 4: Faculties & Departmental Resources */}
               {currentModule === 'academics' && (
                 <FacultiesDeptsView
                   selectedLevel={selectedLevel}
@@ -556,27 +691,23 @@ function MainApp() {
                 />
               )}
 
-              {/* Module 5: Campus Clubs & Student Organizations */}
               {currentModule === 'clubs' && (
                 <ClubsDirectoryView
-                  onRequireAuth={() => handleOpenAuth('signin')}
+                  onRequireAuth={() => handleOpenAuth()}
                   onShowToast={showToast}
                 />
               )}
 
-              {/* Module 6: Verified Campus News Bulletins */}
               {currentModule === 'news' && (
                 <CampusNewsView
                   onShowToast={showToast}
                 />
               )}
 
-              {/* Module 7: Interactive UNILORIN Map & Transit Guide */}
               {currentModule === 'map' && (
                 <CampusMapView />
               )}
 
-              {/* Module 8: Personal Student Profile & Venture Dashboard */}
               {currentModule === 'dashboard' && (
                 <StudentDashboard
                   businesses={businesses}
@@ -600,7 +731,6 @@ function MainApp() {
           </AnimatePresence>
         </main>
 
-        {/* RIGHT CONTEXTUAL PANEL: CAMPUS UTILITIES, TRANSIT & QUICK FILTERS */}
         <RightUtilitiesPanel
           selectedLevel={selectedLevel}
           onSelectLevel={setSelectedLevel}
@@ -611,9 +741,6 @@ function MainApp() {
     </>
   )}
 
-  {/* MODALS & OVERLAYS */}
-      
-      {/* 24h Snap Viewer */}
       <SnapViewerModal
         snap={selectedSnap}
         snapsList={snaps}
@@ -623,38 +750,28 @@ function MainApp() {
         onOpenAuthorProfile={handleViewUserProfile}
       />
 
-      {/* Post Snap Modal with Live Camera & Upload */}
       <CreateSnapModal
         isOpen={isCreateSnapOpen}
         onClose={() => setIsCreateSnapOpen(false)}
         onSnapCreated={handleSnapCreated}
-        onRequireAuth={() => handleOpenAuth('signin')}
+        onRequireAuth={() => handleOpenAuth()}
       />
 
-      {/* Create Campus Post Modal with Camera, Upload & Privacy Restrict */}
       <CreatePostModal
         isOpen={isCreatePostOpen}
         onClose={() => setIsCreatePostOpen(false)}
         onPostCreated={handlePostCreated}
-        onRequireAuth={() => handleOpenAuth('signin')}
+        onRequireAuth={() => handleOpenAuth()}
         userBusinesses={userOwnedBusinesses}
       />
 
-      {/* User Authentication Modal */}
       <AuthModal
         isOpen={isAuthOpen}
         onClose={() => setIsAuthOpen(false)}
-        initialMode={authMode}
         defaultRole={authRole}
-        onSuccess={() => {
-          showToast(`Welcome! You are now signed in to UNILORIN Campus Foundry.`);
-          if (authRole === 'trader') {
-            setIsBecomeTraderOpen(true);
-          }
-        }}
+        onSuccess={handleAuthSuccess}
       />
 
-      {/* Store & Venture Detail Modal */}
       {selectedBusiness && (
         <BusinessDetailModal
           business={selectedBusiness}
@@ -667,7 +784,6 @@ function MainApp() {
         />
       )}
 
-      {/* "Become a Verified Trader" Elevation Modal */}
       <BecomeTraderModal
         isOpen={isBecomeTraderOpen}
         onClose={() => setIsBecomeTraderOpen(false)}
@@ -675,30 +791,22 @@ function MainApp() {
           handleBusinessCreated(newBiz);
           showToast(`🎉 Congratulations! Your account has been elevated to a Verified Trader.`);
         }}
-        onRequireAuth={() => handleOpenAuth('signin')}
+        onRequireAuth={() => handleOpenAuth()}
       />
 
-      {/* Create Trade Modal */}
       <CreateBusinessModal
         isOpen={isCreateBusinessOpen}
         onClose={() => setIsCreateBusinessOpen(false)}
         onBusinessCreated={handleBusinessCreated}
-        onRequireAuth={() => handleOpenAuth('signup', 'trader')}
+        onRequireAuth={() => handleOpenAuth(undefined, 'trader')}
       />
 
-      {/* In-App Trader Chat Drawer */}
       <ChatDrawer />
-
-      {/* Shopping Cart Drawer */}
-      <CartDrawer />
-
-      {/* World Cup Player Card Global Overlay */}
+      <MarketplaceChatDrawer />
+      <CartDrawer onOpenAuth={() => handleOpenAuth()} />
       <PlayerCardOverlay onOpenProfile={handleViewUserProfile} />
-
-      {/* Player Card Studio / Editor Modal */}
       <PlayerCardEditorModal />
 
-      {/* Global Toast Notification */}
       {toastMessage && (
         <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-2xl border border-emerald-500/30 bg-neutral-900/95 px-5 py-3.5 text-xs sm:text-sm font-semibold text-white shadow-2xl backdrop-blur-md animate-in slide-in-from-bottom-5">
           <span className="flex h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
@@ -714,11 +822,13 @@ export default function App() {
   return (
     <AuthProvider>
       <ChatProvider>
-        <CartProvider>
-          <PlayerCardProvider>
-            <MainApp />
-          </PlayerCardProvider>
-        </CartProvider>
+        <MarketplaceChatProvider>
+          <CartProvider>
+            <PlayerCardProvider>
+              <MainApp />
+            </PlayerCardProvider>
+          </CartProvider>
+        </MarketplaceChatProvider>
       </ChatProvider>
     </AuthProvider>
   );

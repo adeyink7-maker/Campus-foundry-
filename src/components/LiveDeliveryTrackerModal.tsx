@@ -1,70 +1,72 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { 
   X, 
   MapPin, 
-  Navigation, 
   Phone, 
-  ShieldCheck, 
-  Clock, 
-  CheckCircle2, 
   Package, 
   Store, 
-  ArrowRight,
-  Sparkles,
-  Zap,
-  CreditCard,
-  KeyRound
+  MessageSquare, 
+  KeyRound, 
+  CheckCircle2, 
+  Clock 
 } from 'lucide-react';
-import { OrderRecord } from '../types';
+import { formatNaira } from '../services/marketplace';
+import { useMarketplaceChat } from '../context/MarketplaceChatContext';
+import { OrderStatus } from '../types';
+
+export interface TrackerOrderData {
+  id: string;
+  orderNumber?: string;
+  businessId: string;
+  businessName: string;
+  businessHostel?: string;
+  status: OrderStatus;
+  totalAmount: number;
+  deliveryAddress: string;
+  phone: string;
+  notes?: string;
+  deliveryPin?: string;
+  items?: Array<{ name?: string; productTitle?: string; quantity: number; price?: number; unitPrice?: number }>;
+  createdAt?: string;
+}
 
 interface LiveDeliveryTrackerModalProps {
-  order: OrderRecord;
+  order: TrackerOrderData | null;
   isOpen: boolean;
   onClose: () => void;
 }
+
+const ORDER_STEPS: Array<{ key: OrderStatus; label: string; desc: string }> = [
+  { key: 'placed', label: 'Placed', desc: 'Order received by trader' },
+  { key: 'accepted', label: 'Accepted', desc: 'Confirmed by trader' },
+  { key: 'preparing', label: 'Preparing', desc: 'In production / packaged' },
+  { key: 'in_transit', label: 'In Transit', desc: 'Hostel courier on route' },
+  { key: 'delivered', label: 'Delivered', desc: 'Order handed over' },
+];
 
 export const LiveDeliveryTrackerModal: React.FC<LiveDeliveryTrackerModalProps> = ({
   order,
   isOpen,
   onClose,
 }) => {
-  // Simulated courier telemetry & GPS movement along campus route
-  const [courierProgress, setCourierProgress] = useState(0.45); // 0.0 to 1.0 along route
-  const [etaSeconds, setEtaSeconds] = useState(740); // ~12 minutes
-  const [activeStep, setActiveStep] = useState<'placed' | 'accepted' | 'preparing' | 'in_transit' | 'delivered'>('in_transit');
+  const { openChatWithBusiness } = useMarketplaceChat();
 
-  // Simulated live movement
-  useEffect(() => {
-    if (!isOpen) return;
+  if (!isOpen || !order) return null;
 
-    const interval = setInterval(() => {
-      setEtaSeconds((prev) => Math.max(60, prev - 3));
-      setCourierProgress((prev) => {
-        if (prev >= 0.95) return 0.95;
-        return prev + 0.008;
-      });
-    }, 1500);
+  const currentStepIndex = order.status === 'cancelled'
+    ? -1
+    : ORDER_STEPS.findIndex((s) => s.key === order.status);
 
-    return () => clearInterval(interval);
-  }, [isOpen]);
+  const handleMessageTrader = async () => {
+    try {
+      onClose();
+      await openChatWithBusiness(order.businessId, order.id);
+    } catch (err) {
+      console.error('Failed to open marketplace chat:', err);
+    }
+  };
 
-  if (!isOpen) return null;
-
-  const etaMinutes = Math.ceil(etaSeconds / 60);
-
-  // Dynamic distance estimate (1.8 km down to 0.2 km)
-  const remainingDistanceKm = Math.max(0.2, (1.8 * (1 - courierProgress))).toFixed(1);
-
-  // Security delivery verification PIN (Glovo/Jumia model)
-  const deliveryPin = order.deliveryPin || '8492';
-
-  const steps = [
-    { id: 'placed', label: 'Order Placed', time: '14:20' },
-    { id: 'accepted', label: 'Accepted by Merchant', time: '14:22' },
-    { id: 'preparing', label: 'Freshly Prepared', time: '14:28' },
-    { id: 'in_transit', label: 'Courier on Campus Route', time: '14:32 (Live)' },
-    { id: 'delivered', label: 'Hostel Room Delivered', time: 'Est. in 12m' },
-  ];
+  const displayOrderNumber = order.orderNumber || order.id.slice(0, 8);
 
   return (
     <div 
@@ -72,25 +74,28 @@ export const LiveDeliveryTrackerModal: React.FC<LiveDeliveryTrackerModalProps> =
       onClick={onClose}
     >
       <div 
-        className="relative flex flex-col w-full max-w-2xl rounded-3xl border border-neutral-800 bg-neutral-900 shadow-2xl overflow-hidden max-h-[92vh] text-white"
+        className="relative flex flex-col w-full max-w-lg rounded-3xl border border-neutral-800 bg-neutral-900 shadow-2xl overflow-hidden max-h-[92vh] text-white"
         onClick={(e) => e.stopPropagation()}
       >
-        
         {/* Header Bar */}
-        <div className="flex items-center justify-between border-b border-neutral-800 bg-neutral-950 px-5 py-4">
+        <div className="flex items-center justify-between border-b border-neutral-800 bg-neutral-950 px-5 py-4 shrink-0">
           <div className="flex items-center gap-2.5">
             <div className="p-2 rounded-xl bg-amber-500/20 text-amber-400">
-              <Navigation className="h-5 w-5 animate-pulse" />
+              <Package className="h-5 w-5" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h3 className="text-sm font-bold text-white">Live On-Demand Delivery Telemetry</h3>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                  Glovo / Jumia Engine
+                <h3 className="text-sm font-bold text-white">Order #{displayOrderNumber}</h3>
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase ${
+                  order.status === 'delivered' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' :
+                  order.status === 'cancelled' ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30' :
+                  'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                }`}>
+                  {order.status}
                 </span>
               </div>
               <p className="text-[11px] text-neutral-400 font-mono">
-                Order #{order.orderNumber} · {order.businessName}
+                {order.businessName}
               </p>
             </div>
           </div>
@@ -98,235 +103,132 @@ export const LiveDeliveryTrackerModal: React.FC<LiveDeliveryTrackerModalProps> =
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 rounded-full bg-neutral-800 text-neutral-400 hover:text-white"
+            className="p-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-400 hover:text-white transition-colors"
           >
             <X className="h-4 w-4" />
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-5 space-y-5">
+        {/* Scrollable Content */}
+        <div className="flex-1 overflow-y-auto p-5 space-y-4">
           
-          {/* Top ETA & Security PIN Banner */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            
-            {/* Dynamic ETA Telemetry Box */}
-            <div className="p-4 rounded-2xl bg-neutral-950 border border-neutral-800 flex items-center justify-between">
-              <div>
-                <span className="text-[10px] font-mono text-neutral-400 uppercase tracking-wider block">Estimated Arrival</span>
-                <div className="text-xl sm:text-2xl font-black text-amber-400 font-mono flex items-center gap-1.5 mt-0.5">
-                  <Clock className="h-5 w-5 animate-spin" />
-                  <span>{etaMinutes} Mins</span>
+          {/* DELIVERY PIN DISPLAY (Glovo/Jumia model) */}
+          {order.deliveryPin && order.status !== 'cancelled' && (
+            <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-500/15 via-orange-500/10 to-neutral-900 border border-amber-500/40 space-y-1.5 shadow-lg">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <KeyRound className="w-5 h-5 text-amber-400" />
+                  <span className="text-xs font-bold text-white">Your Delivery PIN</span>
                 </div>
-                <span className="text-[11px] text-emerald-400 font-semibold">{remainingDistanceKm} km remaining · Direct Route</span>
-              </div>
-              <div className="h-10 w-10 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 font-bold text-lg">
-                🛵
-              </div>
-            </div>
-
-            {/* Delivery Verification PIN (Glovo/Jumia Security Architecture) */}
-            <div className="p-4 rounded-2xl bg-gradient-to-br from-neutral-950 to-neutral-900 border border-emerald-500/40 flex items-center justify-between">
-              <div>
-                <span className="text-[10px] font-mono text-neutral-400 uppercase tracking-wider block flex items-center gap-1">
-                  <KeyRound className="h-3 w-3 text-emerald-400" />
-                  <span>Delivery Security PIN</span>
-                </span>
-                <div className="text-xl sm:text-2xl font-black text-emerald-400 font-mono tracking-widest mt-0.5">
-                  {deliveryPin}
-                </div>
-                <span className="text-[11px] text-neutral-400">Share with courier at hostel door</span>
-              </div>
-              <div className="p-2 rounded-xl bg-emerald-500/20 text-emerald-300">
-                <ShieldCheck className="h-6 w-6" />
-              </div>
-            </div>
-
-          </div>
-
-          {/* ======================================================== */}
-          {/* INTERACTIVE UNILORIN CAMPUS GPS ROUTE MAP (Vector Render) */}
-          {/* ======================================================== */}
-          <div className="relative rounded-3xl overflow-hidden border border-neutral-800 bg-[#0c141c] p-4 shadow-xl">
-            <div className="flex items-center justify-between mb-3 text-xs">
-              <span className="font-bold text-white flex items-center gap-1.5">
-                <MapPin className="h-3.5 w-3.5 text-rose-500" />
-                <span>Live Route: {order.traderHostel || 'Merchant Kitchen'} ➔ {order.buyerHostelRoom}</span>
-              </span>
-              <span className="font-mono text-[10px] text-emerald-400 bg-emerald-500/20 px-2 py-0.5 rounded-full border border-emerald-500/30">
-                Live GPS Active
-              </span>
-            </div>
-
-            {/* SVG Visual Campus Map Route */}
-            <div className="relative h-44 w-full bg-neutral-950/80 rounded-2xl border border-neutral-800 overflow-hidden flex items-center justify-center">
-              
-              {/* Grid backdrop */}
-              <div className="absolute inset-0 bg-[radial-gradient(#1f2937_1px,transparent_1px)] [background-size:16px_16px] opacity-40" />
-
-              <svg className="w-full h-full" viewBox="0 0 500 160" preserveAspectRatio="none">
-                {/* Campus Roadway Path */}
-                <path
-                  d="M 50 110 Q 180 30, 260 90 T 450 60"
-                  fill="none"
-                  stroke="#374151"
-                  strokeWidth="8"
-                  strokeLinecap="round"
-                />
-                {/* Traversed Path */}
-                <path
-                  d="M 50 110 Q 180 30, 260 90 T 450 60"
-                  fill="none"
-                  stroke="#f59e0b"
-                  strokeWidth="6"
-                  strokeDasharray="400"
-                  strokeDashoffset={400 * (1 - courierProgress)}
-                  strokeLinecap="round"
-                />
-
-                {/* Merchant Origin Point */}
-                <circle cx="50" cy="110" r="10" fill="#f59e0b" />
-                <circle cx="50" cy="110" r="5" fill="#000" />
-
-                {/* Destination Hostel Point */}
-                <circle cx="450" cy="60" r="10" fill="#10b981" />
-                <circle cx="450" cy="60" r="5" fill="#000" />
-              </svg>
-
-              {/* Animated Courier Marker on Route */}
-              <div 
-                className="absolute z-20 transition-all duration-1000 ease-linear flex flex-col items-center"
-                style={{
-                  left: `${10 + courierProgress * 78}%`,
-                  top: `${35 + Math.sin(courierProgress * Math.PI) * 20}%`,
-                  transform: 'translate(-50%, -50%)',
-                }}
-              >
-                <div className="relative flex items-center justify-center">
-                  <span className="absolute h-8 w-8 rounded-full bg-amber-400/40 animate-ping" />
-                  <div className="h-8 w-8 rounded-full bg-amber-500 text-neutral-950 flex items-center justify-center shadow-lg font-bold text-sm border-2 border-white">
-                    🛵
-                  </div>
-                </div>
-                <span className="mt-1 px-1.5 py-0.5 rounded bg-neutral-900 border border-amber-400 text-[9px] font-mono text-amber-300 font-bold whitespace-nowrap shadow-md">
-                  Ibrahim ({remainingDistanceKm}km)
+                <span className="font-mono text-xl font-black tracking-widest text-amber-400 px-3.5 py-1 rounded-xl bg-neutral-950 border border-amber-500/30 shadow-inner">
+                  {order.deliveryPin}
                 </span>
               </div>
+              <p className="text-xs text-amber-300 font-medium">
+                Give this PIN to the trader only when you have received your order.
+              </p>
+            </div>
+          )}
 
-              {/* Waypoint Labels */}
-              <div className="absolute left-3 bottom-2 text-[10px] font-mono text-neutral-400 bg-black/60 px-2 py-0.5 rounded border border-neutral-800">
-                🏪 Store / Kitchen
-              </div>
-              <div className="absolute right-3 top-2 text-[10px] font-mono text-emerald-400 bg-black/60 px-2 py-0.5 rounded border border-neutral-800">
-                📍 {order.buyerHostelRoom}
+          {/* Status Timeline */}
+          {order.status === 'cancelled' ? (
+            <div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs space-y-1">
+              <strong className="block font-bold">This Order Was Cancelled</strong>
+              <p className="text-[11px] text-rose-400/80">
+                The order could not be fulfilled and has been closed.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-2 p-4 rounded-2xl bg-neutral-950 border border-neutral-800">
+              <h5 className="text-xs font-bold text-neutral-400 uppercase tracking-wider">Status Timeline</h5>
+              <div className="grid grid-cols-5 gap-1 pt-2">
+                {ORDER_STEPS.map((step, idx) => {
+                  const isCompleted = currentStepIndex >= idx;
+                  const isCurrent = currentStepIndex === idx;
+
+                  return (
+                    <div key={step.key} className="flex flex-col items-center text-center space-y-1.5">
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
+                        isCurrent
+                          ? 'bg-amber-500 text-neutral-950 ring-4 ring-amber-500/30 font-black'
+                          : isCompleted
+                          ? 'bg-emerald-500 text-neutral-950'
+                          : 'bg-neutral-800 text-neutral-500'
+                      }`}>
+                        {isCompleted && !isCurrent ? '✓' : idx + 1}
+                      </div>
+                      <span className={`text-[10px] font-bold truncate max-w-full ${
+                        isCurrent ? 'text-amber-400' : isCompleted ? 'text-neutral-200' : 'text-neutral-500'
+                      }`}>
+                        {step.label}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
             </div>
-          </div>
+          )}
 
-          {/* ======================================================== */}
-          {/* VERIFIED COURIER RIDER CARD */}
-          {/* ======================================================== */}
-          <div className="p-4 rounded-2xl bg-neutral-950 border border-neutral-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <img
-                src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=120"
-                alt="Courier Rider"
-                className="h-12 w-12 rounded-2xl object-cover border-2 border-amber-400 shrink-0"
-              />
-              <div>
-                <div className="flex items-center gap-1.5">
-                  <h4 className="text-xs sm:text-sm font-bold text-white">Ibrahim Sikiru</h4>
-                  <ShieldCheck className="h-4 w-4 text-emerald-400" />
-                  <span className="text-[10px] font-mono text-amber-400 font-bold">4.9 ★ (342 orders)</span>
-                </div>
-                <p className="text-[11px] text-neutral-400 font-mono mt-0.5">
-                  Honda Ace 125 · Kwara ILR-482-XA
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <a
-                href={`tel:${order.courierPhone || '08031234567'}`}
-                className="px-3.5 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-white text-xs font-bold transition-colors flex items-center gap-1.5"
-              >
-                <Phone className="h-3.5 w-3.5" />
-                <span>Call Courier</span>
-              </a>
-
-              <a
-                href={`https://wa.me/2348031234567?text=${encodeURIComponent(`Hello Ibrahim, I am at ${order.buyerHostelRoom} tracking my Campus Foundry order #${order.orderNumber}`)}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="px-3.5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-neutral-950 text-xs font-bold transition-all shadow-md flex items-center gap-1.5 cursor-pointer"
-              >
-                <span>WhatsApp</span>
-              </a>
-            </div>
-          </div>
-
-          {/* ======================================================== */}
-          {/* ORDER LIFECYCLE PROGRESS TIMELINE */}
-          {/* ======================================================== */}
-          <div className="p-4 rounded-2xl bg-neutral-950 border border-neutral-800 space-y-3">
-            <h4 className="text-xs font-bold text-neutral-300 uppercase tracking-wider">
-              Order Status Flow
-            </h4>
-            
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-center text-xs">
-              {steps.map((st, i) => (
-                <div
-                  key={st.id}
-                  className={`p-2.5 rounded-xl border flex flex-col items-center justify-between gap-1 transition-all ${
-                    st.id === activeStep
-                      ? 'bg-amber-500/20 border-amber-500/50 text-amber-300 font-bold shadow-md'
-                      : i < 3
-                      ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
-                      : 'bg-neutral-900 border-neutral-800 text-neutral-500'
-                  }`}
-                >
-                  <div className="flex items-center gap-1">
-                    {i < 3 ? (
-                      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
-                    ) : st.id === activeStep ? (
-                      <Zap className="h-3.5 w-3.5 text-amber-400 animate-bounce" />
-                    ) : (
-                      <Package className="h-3.5 w-3.5 text-neutral-500" />
-                    )}
+          {/* Order Details & Items */}
+          <div className="space-y-2">
+            <h5 className="text-xs font-bold text-neutral-400 uppercase tracking-wider">Order Items</h5>
+            <div className="p-3.5 rounded-2xl bg-neutral-950 border border-neutral-800 space-y-2 text-xs">
+              {(order.items || []).map((item, idx) => {
+                const title = item.productTitle || item.name || 'Campus Item';
+                const unitPrice = item.unitPrice || item.price || 0;
+                return (
+                  <div key={idx} className="flex items-center justify-between text-neutral-300">
+                    <span>{item.quantity}x {title}</span>
+                    <span className="font-mono text-neutral-400">{formatNaira(unitPrice * item.quantity)}</span>
                   </div>
-                  <span className="text-[10px] leading-tight font-semibold">{st.label}</span>
-                  <span className="text-[9px] font-mono text-neutral-400">{st.time}</span>
-                </div>
-              ))}
+                );
+              })}
+
+              <div className="pt-2 mt-2 border-t border-neutral-800 flex items-center justify-between font-bold">
+                <span className="text-white">Total Amount</span>
+                <span className="text-amber-400 font-mono text-sm">{formatNaira(order.totalAmount)}</span>
+              </div>
             </div>
           </div>
 
-          {/* Items Summary & Payment Split Settlement */}
-          <div className="p-4 rounded-2xl bg-neutral-950 border border-neutral-800 space-y-2 text-xs">
-            <div className="flex items-center justify-between pb-2 border-b border-neutral-800">
-              <span className="font-bold text-neutral-300">Items Ordered ({order.items.length})</span>
-              <span className="text-emerald-400 font-mono font-bold">Paid via {order.paymentMethod || 'Card'}</span>
+          {/* Delivery & Contact Info */}
+          <div className="p-3.5 rounded-2xl bg-neutral-950 border border-neutral-800 space-y-2 text-xs">
+            <div className="flex items-center gap-2 text-neutral-300">
+              <MapPin className="w-4 h-4 text-emerald-400 shrink-0" />
+              <span>Hostel: <strong>{order.deliveryAddress}</strong></span>
             </div>
-
-            <div className="space-y-1.5 pt-1">
-              {order.items.map((it, idx) => (
-                <div key={idx} className="flex items-center justify-between text-neutral-400">
-                  <span>{it.quantity}x {it.name}</span>
-                  <span className="font-mono text-white">₦{(it.price * it.quantity).toLocaleString()}</span>
-                </div>
-              ))}
+            <div className="flex items-center gap-2 text-neutral-300">
+              <Phone className="w-4 h-4 text-amber-400 shrink-0" />
+              <span>Contact: <strong>{order.phone}</strong></span>
             </div>
-
-            <div className="pt-2 border-t border-neutral-800 flex items-center justify-between font-bold">
-              <span>Grand Total Paid</span>
-              <span className="text-amber-400 font-mono text-sm">₦{order.grandTotal.toLocaleString()}</span>
-            </div>
+            {order.notes && (
+              <p className="text-[11px] text-neutral-400 pt-1">
+                Note: {order.notes}
+              </p>
+            )}
           </div>
-
         </div>
 
+        {/* Footer Actions */}
+        <div className="p-4 border-t border-neutral-800 bg-neutral-950 flex items-center gap-3 shrink-0">
+          <button
+            type="button"
+            onClick={handleMessageTrader}
+            className="flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-amber-400 text-xs font-bold transition-colors cursor-pointer"
+          >
+            <MessageSquare className="w-4 h-4" />
+            <span>Message Trader</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={onClose}
+            className="py-3 px-6 rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 text-xs font-bold transition-all shadow-md cursor-pointer"
+          >
+            Close
+          </button>
+        </div>
       </div>
     </div>
   );
 };
-
-export default LiveDeliveryTrackerModal;

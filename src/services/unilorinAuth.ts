@@ -1,8 +1,9 @@
 import { supabase, isSupabaseConfigured, formatSupabaseErrorMessage } from './supabase';
-import { AppUser, UserRole } from '../types';
+import { AppUser, UserRole, StudentLevel } from '../types';
 
 export const UNILORIN_DOMAIN = 'students.unilorin.edu.ng';
 export const MATRIC_USERNAME_REGEX = /^[a-z0-9-]+$/i;
+export const ADMIN_EMAILS: string[] = [];
 
 export interface SendOtpResult {
   success: boolean;
@@ -14,8 +15,9 @@ export interface SendOtpResult {
 export interface VerifyOtpParams {
   email: string;
   otp: string;
-  fullName: string;
-  role: UserRole;
+  fullName?: string;
+  role?: UserRole;
+  level?: StudentLevel;
   hostelLocation?: string;
   whatsapp?: string;
   faculty?: string;
@@ -25,16 +27,22 @@ export interface VerifyOtpParams {
 export interface VerifyOtpResult {
   success: boolean;
   user: AppUser;
+  needsOnboarding?: boolean;
   message?: string;
 }
 
 /**
- * Strict Client-Side validation before hitting authentication gateway
+ * // LAUNCH POLISH: Strict Client-Side validation and sanitization before hitting authentication gateway
  */
 export function validateUnilorinEmail(email: string): { valid: boolean; error?: string; matricNumber?: string } {
-  const normalized = (email || '').trim().toLowerCase();
+  // LAUNCH POLISH: Input sanitization - strip unsafe whitespace and control chars
+  const normalized = (email || '').trim().toLowerCase().replace(/[\x00-\x1F\x7F]/g, '');
   if (!normalized || !normalized.includes('@')) {
     return { valid: false, error: 'Please enter a valid UNILORIN student email address.' };
+  }
+
+  if (ADMIN_EMAILS.includes(normalized)) {
+    return { valid: true, matricNumber: normalized.split('@')[0] };
   }
 
   const parts = normalized.split('@');
@@ -44,11 +52,11 @@ export function validateUnilorinEmail(email: string): { valid: boolean; error?: 
 
   const [username, domain] = parts;
 
-  // Strict domain check (no external domains, no spoofing)
+  // LAUNCH POLISH: Strict domain check (no external domains, no spoofing)
   if (domain !== UNILORIN_DOMAIN) {
     return {
       valid: false,
-      error: `Only official UNILORIN student emails (@${UNILORIN_DOMAIN}) are permitted. External or personal emails are forbidden.`
+      error: `Only official UNILORIN student emails (@${UNILORIN_DOMAIN}) are permitted.`
     };
   }
 
@@ -64,8 +72,7 @@ export function validateUnilorinEmail(email: string): { valid: boolean; error?: 
 }
 
 /**
- * Initiates 6-digit OTP delivery using Supabase Auth signInWithOtp,
- * with graceful fallback to the local UNILORIN Gateway if Supabase project has unconfigured SMTP.
+ * Initiates 6-digit OTP delivery using Supabase Auth signInWithOtp
  */
 export async function requestStudentEmailOTP(email: string): Promise<SendOtpResult> {
   const validation = validateUnilorinEmail(email);
@@ -75,76 +82,31 @@ export async function requestStudentEmailOTP(email: string): Promise<SendOtpResu
 
   const normalized = email.trim().toLowerCase();
 
-  // 1. Attempt Supabase Auth signInWithOtp when Supabase is live-configured
-  if (isSupabaseConfigured) {
-    try {
-      const { error } = await supabase.auth.signInWithOtp({
-        email: normalized,
-        options: {
-          shouldCreateUser: true,
-        },
-      });
+  const { error } = await supabase.auth.signInWithOtp({
+    email: normalized,
+    options: {
+      shouldCreateUser: true,
+    },
+  });
 
-      if (!error) {
-        return {
-          success: true,
-          message: `A 6-digit verification code has been dispatched to ${normalized}. Please check your webmail inbox or spam folder.`,
-          expiresInSeconds: 600,
-          retryAfterSeconds: 60,
-        };
-      }
-
-      // Log warning for diagnostic clarity without raising unhandled console errors
-      console.warn('[Supabase Auth signInWithOtp Notice]:', {
-        status: (error as any)?.status,
-        message: error.message,
-      });
-
-      const isSmtpOrNetworkIssue =
-        (error as any)?.status === 500 ||
-        error.message?.toLowerCase().includes('confirmation email') ||
-        error.message?.toLowerCase().includes('rate limit') ||
-        error.message?.toLowerCase().includes('failed to fetch');
-
-      if (!isSmtpOrNetworkIssue) {
-        throw new Error(formatSupabaseErrorMessage(error));
-      }
-    } catch (err: any) {
-      const msg = (err?.message || '').toLowerCase();
-      if (!msg.includes('confirmation email') && !msg.includes('failed to fetch')) {
-        throw err;
-      }
-      console.warn('[UNILORIN Auth]: Routing OTP request via Student Gateway fallback.');
+  if (error) {
+    const lower = error.message?.toLowerCase() || '';
+    if (lower.includes('rate') || error.status === 429) {
+      throw new Error('Too many attempts. Please wait 60 seconds before requesting another code.');
     }
+    throw new Error(formatSupabaseErrorMessage(error, 'Failed to send verification code. Please try again.'));
   }
 
-  // 2. UNILORIN Student Authentication Gateway Fallback
-  try {
-    const response = await fetch('/api/auth/unilorin/send-otp', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: normalized }),
-    });
-
-    const data = await response.json();
-    if (!response.ok) {
-      throw new Error(data.error || 'Failed to dispatch verification code.');
-    }
-
-    return {
-      success: true,
-      message: data.message || `Verification code sent to ${normalized}. Please check your student webmail.`,
-      expiresInSeconds: data.expiresInSeconds || 600,
-      retryAfterSeconds: data.retryAfterSeconds || 60,
-    };
-  } catch (gatewayErr: any) {
-    console.warn('[UNILORIN Gateway Exception]:', gatewayErr?.message || gatewayErr);
-    throw new Error(gatewayErr?.message || 'Failed to dispatch verification code. Please check your network connection.');
-  }
+  return {
+    success: true,
+    message: `A 6-digit verification code has been sent to ${normalized}. Please check your webmail inbox or spam folder.`,
+    expiresInSeconds: 600,
+    retryAfterSeconds: 60,
+  };
 }
 
 /**
- * Verifies 6-digit OTP via Supabase Auth or UNILORIN Student Gateway, then syncs profile
+ * Verifies 6-digit OTP via Supabase Auth verifyOtp, then checks and syncs profile
  */
 export async function verifyStudentEmailOTP(params: VerifyOtpParams): Promise<VerifyOtpResult> {
   const validation = validateUnilorinEmail(params.email);
@@ -158,96 +120,75 @@ export async function verifyStudentEmailOTP(params: VerifyOtpParams): Promise<Ve
   }
 
   const normalized = params.email.trim().toLowerCase();
-  let verifiedUserId: string | null = null;
-  let createdAtStr: string = new Date().toISOString();
 
-  // 1. Attempt Supabase Auth verifyOtp if live-configured
-  if (isSupabaseConfigured) {
-    try {
-      const { data, error } = await supabase.auth.verifyOtp({
-        email: normalized,
-        token,
-        type: 'email',
-      });
+  const { data, error } = await supabase.auth.verifyOtp({
+    email: normalized,
+    token,
+    type: 'email',
+  });
 
-      if (!error && data?.user) {
-        verifiedUserId = data.user.id;
-        createdAtStr = data.user.created_at || createdAtStr;
-      } else if (error) {
-        console.warn('[Supabase Auth verifyOtp Notice]:', error.message);
-      }
-    } catch (err: any) {
-      console.warn('[Supabase Auth verifyOtp Exception]:', err?.message || err);
+  if (error || !data?.user) {
+    const msg = error?.message?.toLowerCase() || '';
+    if (msg.includes('expire') || msg.includes('token expired')) {
+      throw new Error('Verification code has expired. Please request a new code.');
     }
+    if (msg.includes('rate') || error?.status === 429) {
+      throw new Error('Too many verification attempts. Please wait a moment before trying again.');
+    }
+    throw new Error('Incorrect verification code. Please check your webmail inbox or spam folder and try again.');
   }
 
-  // 2. Fall back to local UNILORIN gateway verification if not validated via Supabase Auth
-  if (!verifiedUserId) {
-    try {
-      const response = await fetch('/api/auth/unilorin/verify-otp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: normalized,
-          otp: token,
-          fullName: params.fullName.trim() || 'UNILORIN Student',
-          role: params.role,
-          hostelLocation: params.hostelLocation,
-          whatsapp: params.whatsapp,
-          faculty: params.faculty,
-          department: params.department,
-        }),
-      });
-
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || 'Verification passcode is incorrect or has expired.');
-      }
-
-      verifiedUserId = data.uid || data.user?.uid || `usr_${Math.random().toString(36).substring(2, 9)}`;
-      createdAtStr = data.user?.createdAt || createdAtStr;
-    } catch (gatewayVerifyErr: any) {
-      throw new Error(gatewayVerifyErr?.message || 'Verification failed. Please verify the 6-digit passcode and try again.');
-    }
-  }
-
+  const user = data.user;
   const matric = validation.matricNumber || normalized.split('@')[0];
 
-  // Map to AppUser
+  // Fetch existing profile from Supabase profiles table
+  const { data: existingProfile } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('id', user.id)
+    .maybeSingle();
+
+  const needsOnboarding = !existingProfile || !existingProfile.full_name || existingProfile.full_name === 'UNILORIN Student' || !existingProfile.level || !existingProfile.department;
+
+  // Prepare app user representation
   const appUser: AppUser = {
-    id: verifiedUserId || `usr_${Math.random().toString(36).substring(2, 9)}`,
+    id: user.id,
     email: normalized,
-    fullName: params.fullName.trim() || 'UNILORIN Student',
-    username: matric,
-    matricNumber: matric,
-    role: params.role,
-    accountType: params.role === 'trader' ? 'TRADER' : 'BUYER',
+    fullName: params.fullName?.trim() || existingProfile?.full_name || 'UNILORIN Student',
+    username: existingProfile?.username || matric,
+    matricNumber: existingProfile?.matric_number || matric,
+    role: (existingProfile?.role as UserRole) || params.role || 'student',
+    accountType: existingProfile?.account_type || (params.role === 'trader' ? 'TRADER' : 'BUYER'),
     university: 'University of Ilorin (UNILORIN)',
-    hostelLocation: params.hostelLocation,
-    faculty: params.faculty,
-    department: params.department,
-    whatsapp: params.whatsapp,
+    level: (existingProfile?.level as StudentLevel) || params.level || '300L',
+    hostelLocation: existingProfile?.hostel_location || params.hostelLocation,
+    faculty: existingProfile?.faculty || params.faculty,
+    department: existingProfile?.department || params.department,
+    whatsapp: existingProfile?.whatsapp || params.whatsapp,
     isVerified: true,
     unilorinDomain: UNILORIN_DOMAIN,
-    joinedAt: createdAtStr,
-    followersCount: 0,
-    followingCount: 0,
-    postsCount: 0,
-    followingUserIds: [],
-    blockedUserIds: [],
+    joinedAt: user.created_at || new Date().toISOString(),
+    followersCount: existingProfile?.followers_count || 0,
+    followingCount: existingProfile?.following_count || 0,
+    postsCount: existingProfile?.posts_count || 0,
+    followingUserIds: existingProfile?.following_user_ids || [],
+    blockedUserIds: existingProfile?.blocked_user_ids || [],
+    avatarUrl: existingProfile?.avatar_url,
+    bio: existingProfile?.bio,
   };
 
-  // Sync verified student profile to Supabase Database (if configured)
-  if (isSupabaseConfigured) {
+  // Upsert profile into Supabase profiles table using real column names
+  if (params.fullName || params.level || params.faculty || params.department) {
     try {
       await supabase.from('profiles').upsert({
-        id: appUser.id,
-        email: appUser.email,
+        id: user.id,
+        email: normalized,
         full_name: appUser.fullName,
-        matric_number: appUser.matricNumber,
         username: appUser.username,
+        matric_number: appUser.matricNumber,
         role: appUser.role,
         account_type: appUser.accountType,
+        level: appUser.level,
         faculty: appUser.faculty,
         department: appUser.department,
         hostel_location: appUser.hostelLocation,
@@ -255,14 +196,16 @@ export async function verifyStudentEmailOTP(params: VerifyOtpParams): Promise<Ve
         is_verified: true,
         updated_at: new Date().toISOString(),
       }, { onConflict: 'id' });
-    } catch (supabaseErr: any) {
-      console.warn('[Supabase Profile Sync Notice]:', supabaseErr?.message || supabaseErr);
+    } catch (e) {
+      console.warn('[Supabase Profile Upsert Notice]:', e);
     }
   }
 
   return {
     success: true,
     user: appUser,
+    needsOnboarding,
     message: 'Identity verified successfully with University of Ilorin credentials.'
   };
 }
+

@@ -267,61 +267,34 @@ export const HeroSection = ({
 
           </div>
 
-          {/* Right Column: Highlighting an Actual Student Venture Card */}
+          {/* Right Column: Launch Ready Empty State or Featured Venture */}
           <div className="lg:col-span-5">
-            <div 
-              onClick={() => onSelectFeatured('dami-pastries-unilorin')}
-              className="group relative rounded-2xl border border-neutral-800 bg-neutral-900 overflow-hidden shadow-2xl transition-all duration-300 hover:border-emerald-500/50 cursor-pointer"
-            >
-              {/* Product Visual */}
-              <div className="relative h-56 sm:h-64 w-full overflow-hidden bg-neutral-950">
-                <img
-                  src="https://images.unsplash.com/photo-1509440159596-0249088772ff?auto=format&fit=crop&w=800&q=80"
-                  alt="Dami's Crust & Hot Bakes"
-                  className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-                  onError={(e) => { e.currentTarget.style.display = 'none'; }}
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-neutral-950 via-neutral-950/40 to-transparent" />
-
-                {/* Tags on Image */}
-                <div className="absolute top-3 left-3 flex items-center gap-1.5 rounded-lg bg-neutral-950/90 border border-neutral-800 px-2.5 py-1 text-xs text-neutral-200 backdrop-blur-md">
-                  <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" />
-                  <span>Lagos Hostel Block C</span>
-                </div>
-
-                <div className="absolute bottom-3 right-3 flex items-center gap-1 rounded-lg bg-emerald-500 px-2.5 py-1 text-xs font-bold text-neutral-950 shadow-md">
-                  <span>Room Delivery Active</span>
-                </div>
+            <div className="rounded-2xl border border-neutral-800 bg-neutral-900/90 p-6 sm:p-8 text-center space-y-4 shadow-2xl backdrop-blur-md">
+              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                <Store className="h-8 w-8" />
+              </div>
+              <div>
+                <span className="inline-block rounded-full bg-emerald-500/10 border border-emerald-500/20 px-3 py-1 text-[10px] font-extrabold uppercase tracking-wider text-emerald-400 mb-2">
+                  Launch Ready Marketplace
+                </span>
+                <h3 className="text-lg sm:text-xl font-bold text-white">
+                  No stores listed yet. Be the first vendor on Campus Foundry!
+                </h3>
+                <p className="mt-2 text-xs text-neutral-400 max-w-sm mx-auto leading-relaxed">
+                  List your hostel bakes, tech repair, dorm styling, or campus brand today with zero commission fees.
+                </p>
               </div>
 
-              {/* Card Information */}
-              <div className="p-5 bg-neutral-950">
-                <div className="flex items-center justify-between text-xs text-neutral-400 mb-1">
-                  <span className="font-semibold text-emerald-400 uppercase tracking-wider text-[10px]">
-                    ⭐ Featured Student Venture
-                  </span>
-                  <span className="font-mono text-neutral-400">18 orders today</span>
-                </div>
-
-                <h3 className="text-lg font-bold text-white group-hover:text-emerald-400 transition-colors">
-                  Dami's Crust & Hot Bakes
-                </h3>
-
-                <p className="mt-1 text-xs text-neutral-400 line-clamp-2 leading-relaxed">
-                  Warm beef meat pies, glazed cinnamon rolls & midnight study packages baked daily in Lagos Hostel. Delivered right to your hostel door.
-                </p>
-
-                <div className="mt-4 flex items-center justify-between pt-3 border-t border-neutral-800/80">
-                  <div>
-                    <span className="text-[10px] text-neutral-500 uppercase tracking-wider block">Starting from</span>
-                    <span className="font-mono font-bold text-white text-sm">₦800</span>
-                  </div>
-
-                  <div className="flex items-center gap-1 text-xs font-bold text-emerald-400 group-hover:translate-x-0.5 transition-transform">
-                    <span>View Menu & Order</span>
-                    <ArrowRight className="h-3.5 w-3.5" />
-                  </div>
-                </div>
+              <div className="pt-2">
+                <button
+                  type="button"
+                  onClick={onOpenCreateBusiness}
+                  className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 px-5 py-3 text-xs sm:text-sm font-bold text-white shadow-lg shadow-emerald-950/50 transition-all cursor-pointer"
+                >
+                  <Store className="h-4 w-4" />
+                  <span>List Your Store First</span>
+                  <ArrowRight className="h-4 w-4" />
+                </button>
               </div>
             </div>
           </div>

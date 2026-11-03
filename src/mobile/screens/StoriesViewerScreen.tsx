@@ -239,7 +239,7 @@ export const StoriesViewerScreen: React.FC<StoriesViewerScreenProps> = ({
         {/* Offline sync banner if queued */}
         {isOfflineQueued && (
           <div className="absolute top-20 left-1/2 -translate-x-1/2 z-30 px-3 py-1 bg-amber-500/90 text-neutral-950 font-bold text-xs rounded-full shadow-lg backdrop-blur-md animate-bounce">
-            ⚡ Queued locally in WatermelonDB
+            ⚡ Saved offline — will sync when connected
           </div>
         )}
 

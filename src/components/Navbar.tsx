@@ -142,7 +142,7 @@ export const Navbar = ({
                 className="flex items-center gap-1.5 rounded-xl border border-blue-500/50 bg-blue-600/20 px-3 py-2 text-xs font-semibold text-blue-300 hover:border-blue-400 hover:bg-blue-600/30 transition-colors shadow-xs"
               >
                 <ShieldCheck className="h-3.5 w-3.5 text-blue-400" />
-                <span>UNILORIN Sign In</span>
+                <span>Sign In</span>
               </button>
 
               <button

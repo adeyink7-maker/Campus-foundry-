@@ -7,6 +7,21 @@ import {
   ChatThemeMode,
 } from '../types';
 import { useAuth } from './AuthContext';
+import { 
+  supabase,
+  isSupabaseConfigured,
+  ensureSupabaseAuthSession,
+  ensureConversationInSupabase,
+  upsertConversationInSupabase, 
+  insertChatMessageInSupabase, 
+  fetchConversationsFromSupabase, 
+  fetchMessagesFromSupabase,
+  emitAppToast,
+  toSafeUuid,
+  isValidUuid,
+  isMockConversation
+} from '../services/supabase';
+import { sendMessage as apiSendMessage, getOrCreateConversation } from '../services/marketplace';
 
 export interface SendMessageOptions {
   orderSnippet?: ChatOrderSnippet;
@@ -62,156 +77,47 @@ interface ChatContextType {
   clearAllChats: () => void;
 }
 
-const STORAGE_CHATS_KEY = 'campus_foundry_chat_messages_v5';
-const STORAGE_CONVS_KEY = 'campus_foundry_chat_conversations_v5';
+const STORAGE_CHATS_KEY = 'campus_foundry_chat_messages_v7';
+const STORAGE_CONVS_KEY = 'campus_foundry_chat_conversations_v7';
 const STORAGE_THEME_KEY = 'campus_foundry_chat_theme';
 const STORAGE_PRIVACY_KEY = 'campus_foundry_chat_online_privacy';
 
 const ChatContext = createContext<ChatContextType | undefined>(undefined);
 
-// Initial demo conversations demonstrating both established chats and X/Twitter message requests
-const INITIAL_DEMO_CONVERSATIONS: ChatConversation[] = [
-  {
-    id: 'conv_campus_bites_1',
-    businessId: 'biz_1',
-    businessName: 'Campus Bites & Grills',
-    businessImageUrl: 'https://images.unsplash.com/photo-1555939594-58d7cb561ad1?w=300',
-    traderName: 'Tunde Bakare',
-    traderId: 'tunde@unilorin.edu.ng',
-    traderHostel: 'Zamfara Hostel (Male)',
-    buyerId: 'usr_me',
-    buyerName: 'You',
-    lastMessage: 'Your smoky jollof and turkey is on the way to your hostel room!',
-    lastMessageTimestamp: new Date(Date.now() - 1000 * 60 * 8).toISOString(),
-    unreadCount: 0,
-    isMessageRequest: false,
-    requestStatus: 'accepted',
-    isOnline: true,
-    lastSeen: 'Online',
-  },
-  {
-    id: 'conv_req_gadget_dr',
-    businessId: 'biz_req_1',
-    businessName: 'Gadget Doctor & Tech Lab',
-    businessImageUrl: 'https://images.unsplash.com/photo-1588872657578-7efd1f1555ed?w=300',
-    traderName: 'Amina Al-Hassan',
-    traderId: 'amina_tech@unilorin.edu.ng',
-    traderHostel: 'Abuja Hostel (Female)',
-    buyerId: 'usr_me',
-    buyerName: 'You',
-    lastMessage: 'Hello! Saw your enquiry about replacing the MacBook M1 screen. We have genuine OEM parts in stock.',
-    lastMessageTimestamp: new Date(Date.now() - 1000 * 60 * 35).toISOString(),
-    unreadCount: 1,
-    isMessageRequest: true,
-    requestStatus: 'pending',
-    isOnline: true,
-    lastSeen: 'Online',
-  },
-  {
-    id: 'conv_req_tutor_peer',
-    businessId: 'biz_req_2',
-    businessName: 'CIS Peer Tutoring & Code Prep',
-    businessImageUrl: 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=300',
-    traderName: 'David Oladipo',
-    traderId: 'david_cis@unilorin.edu.ng',
-    traderHostel: 'Private Hostel, Sanrab',
-    buyerId: 'usr_me',
-    buyerName: 'You',
-    lastMessage: 'Hi, are you still interested in joining the Data Structures & Algorithm intensive study cohort this weekend?',
-    lastMessageTimestamp: new Date(Date.now() - 1000 * 60 * 120).toISOString(),
-    unreadCount: 1,
-    isMessageRequest: true,
-    requestStatus: 'pending',
-    isOnline: false,
-    lastSeen: 'last seen today at 13:45',
-  },
-];
+// Valid RFC4122 v4 UUID constants for mock users to prevent PostgreSQL 22P02 errors
+export const DEMO_USER_ME = 'a1b2c3d4-e5f6-4a1b-8c2d-3e4f5a6b7c01';
+export const DEMO_TRADER_TUNDE = 'b2c3d4e5-f6a1-4b2c-9d3e-4f5a6b7c8d02';
+export const DEMO_TRADER_AMINA = 'c3d4e5f6-a1b2-4c3d-ae4f-5a6b7c8d9e03';
+export const DEMO_TRADER_DAVID = 'd4e5f6a1-b2c3-4d4e-bf5a-6b7c8d9e0f04';
+export const DEMO_BIZ_1 = 'e5f6a1b2-c3d4-4e5f-a1b2-c3d4e5f6a101';
+export const DEMO_BIZ_REQ_1 = 'f6a1b2c3-d4e5-4f6a-b2c3-d4e5f6a1b202';
+export const DEMO_BIZ_REQ_2 = 'a2b3c4d5-e6f7-4a2b-8c3d-4e5f6a1b2c03';
 
-const INITIAL_DEMO_MESSAGES: ChatMessage[] = [
-  {
-    id: 'msg_demo_1',
-    conversationId: 'conv_campus_bites_1',
-    businessId: 'biz_1',
-    businessName: 'Campus Bites & Grills',
-    senderId: 'usr_me',
-    senderName: 'You',
-    senderRole: 'student',
-    recipientId: 'tunde@unilorin.edu.ng',
-    recipientName: 'Tunde Bakare',
-    text: 'Good afternoon! Please can I get the Grilled Peppered Turkey and Jollof Combo delivered to Lagos Hostel?',
-    timestamp: new Date(Date.now() - 1000 * 60 * 20).toISOString(),
-    isRead: true,
-    deliveryState: 'read',
-    hostelLocation: 'Lagos Hostel',
-  },
-  {
-    id: 'msg_demo_2',
-    conversationId: 'conv_campus_bites_1',
-    businessId: 'biz_1',
-    businessName: 'Campus Bites & Grills',
-    senderId: 'tunde@unilorin.edu.ng',
-    senderName: 'Tunde Bakare',
-    senderRole: 'trader',
-    recipientId: 'usr_me',
-    recipientName: 'You',
-    text: 'Yes definitely! We are packaging it now with fresh coleslaw and plantain.',
-    timestamp: new Date(Date.now() - 1000 * 60 * 15).toISOString(),
-    isRead: true,
-    deliveryState: 'read',
-    hostelLocation: 'Zamfara Hostel',
-    reactions: { '🔥': ['usr_me'] },
-  },
-  {
-    id: 'msg_demo_3',
-    conversationId: 'conv_campus_bites_1',
-    businessId: 'biz_1',
-    businessName: 'Campus Bites & Grills',
-    senderId: 'tunde@unilorin.edu.ng',
-    senderName: 'Tunde Bakare',
-    senderRole: 'trader',
-    recipientId: 'usr_me',
-    recipientName: 'You',
-    text: 'Your smoky jollof and turkey is on the way to your hostel room!',
-    timestamp: new Date(Date.now() - 1000 * 60 * 8).toISOString(),
-    isRead: true,
-    deliveryState: 'read',
-    hostelLocation: 'Zamfara Hostel',
-    voiceNoteUrl: 'https://actions.google.com/sounds/v1/water/air_woosh_underwater.ogg',
-    voiceDuration: 6,
-    voiceWaveform: [35, 60, 85, 40, 95, 70, 50, 80, 65, 45, 90, 30],
-  },
-  // Request messages
-  {
-    id: 'msg_req_1',
-    conversationId: 'conv_req_gadget_dr',
-    businessId: 'biz_req_1',
-    businessName: 'Gadget Doctor & Tech Lab',
-    senderId: 'amina_tech@unilorin.edu.ng',
-    senderName: 'Amina Al-Hassan',
-    senderRole: 'trader',
-    recipientId: 'usr_me',
-    recipientName: 'You',
-    text: 'Hello! Saw your enquiry about replacing the MacBook M1 screen. We have genuine OEM parts in stock.',
-    timestamp: new Date(Date.now() - 1000 * 60 * 35).toISOString(),
-    isRead: false,
-    deliveryState: 'delivered',
-  },
-  {
-    id: 'msg_req_2',
-    conversationId: 'conv_req_tutor_peer',
-    businessId: 'biz_req_2',
-    businessName: 'CIS Peer Tutoring & Code Prep',
-    senderId: 'david_cis@unilorin.edu.ng',
-    senderName: 'David Oladipo',
-    senderRole: 'trader',
-    recipientId: 'usr_me',
-    recipientName: 'You',
-    text: 'Hi, are you still interested in joining the Data Structures & Algorithm intensive study cohort this weekend?',
-    timestamp: new Date(Date.now() - 1000 * 60 * 120).toISOString(),
-    isRead: false,
-    deliveryState: 'delivered',
-  },
-];
+async function resolveConversationKind(convId: string, conv?: ChatConversation): Promise<'marketplace' | 'direct' | null> {
+  if (conv?.kind === 'marketplace' || conv?.kind === 'direct') {
+    return conv.kind;
+  }
+  if (conv?.businessId || convId.startsWith('conv_') || convId.startsWith('biz_') || convId.includes('biz_') || convId.includes('conv_')) {
+    return 'marketplace';
+  }
+  if (isMockConversation(convId)) {
+    return 'marketplace';
+  }
+  if (!isSupabaseConfigured) {
+    return 'marketplace';
+  }
+  const safeId = toSafeUuid(convId);
+  try {
+    const { data: mData } = await supabase.from('marketplace_conversations').select('id').eq('id', safeId).maybeSingle();
+    if (mData) return 'marketplace';
+  } catch {}
+  try {
+    const { data: dData } = await supabase.from('chat_conversations').select('id').eq('id', safeId).maybeSingle();
+    if (dData) return 'direct';
+  } catch {}
+  // Default fallback for any conversation originating from market/business/conv_ patterns
+  return 'marketplace';
+}
 
 export const ChatProvider = ({ children }: { children: ReactNode }) => {
   const { currentUser } = useAuth();
@@ -220,10 +126,21 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
       const saved = localStorage.getItem(STORAGE_CONVS_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          // Filter out any legacy demo conversation IDs and self-chats
+          const realOnly = parsed.filter(
+            (c: ChatConversation) =>
+              c.id !== '7b9c6a1e-8e4d-4b8a-9a1b-1c2d3e4f5a01' &&
+              c.id !== '8c0d7b2f-9f5e-4c9b-ab2c-2d3e4f5a6b02' &&
+              c.id !== '9d1e8c3a-0a6f-4da0-bc3d-3e4f5a6b7c03' &&
+              !c.id.startsWith('conv_campus_bites') &&
+              c.buyerId !== c.traderId
+          );
+          return realOnly;
+        }
       }
     } catch {}
-    return INITIAL_DEMO_CONVERSATIONS;
+    return [];
   });
 
   const [messages, setMessages] = useState<ChatMessage[]>(() => {
@@ -231,13 +148,23 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
       const saved = localStorage.getItem(STORAGE_CHATS_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const realOnly = parsed.filter(
+            (m: ChatMessage) =>
+              m.conversationId !== '7b9c6a1e-8e4d-4b8a-9a1b-1c2d3e4f5a01' &&
+              m.conversationId !== '8c0d7b2f-9f5e-4c9b-ab2c-2d3e4f5a6b02' &&
+              m.conversationId !== '9d1e8c3a-0a6f-4da0-bc3d-3e4f5a6b7c03' &&
+              !m.conversationId.startsWith('conv_campus_bites') &&
+              !m.text?.includes('Engineering Mathematics')
+          );
+          return realOnly;
+        }
       }
     } catch {}
-    return INITIAL_DEMO_MESSAGES;
+    return [];
   });
 
-  const [activeConversationId, setActiveConversationId] = useState<string | null>('conv_campus_bites_1');
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [isChatDrawerOpen, setIsChatDrawerOpen] = useState(false);
   const [isConnected, setIsConnected] = useState(true);
   const [typingMap, setTypingMap] = useState<Record<string, string>>({});
@@ -308,6 +235,97 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
     } catch {}
   }, []);
 
+  // Initial cloud conversation fetch from Supabase
+  useEffect(() => {
+    if (!currentUser?.id || !isSupabaseConfigured) return;
+    fetchConversationsFromSupabase(currentUser.id)
+      .then((cloudConvs) => {
+        if (cloudConvs && cloudConvs.length > 0) {
+          setConversations((prev) => {
+            const map = new Map<string, ChatConversation>();
+            prev.forEach((c) => map.set(c.id, c));
+            cloudConvs.forEach((c) => map.set(c.id, c));
+            return Array.from(map.values());
+          });
+        }
+      })
+      .catch((err) => {
+        console.error('[Supabase fetchConversations error]:', err);
+      });
+  }, [currentUser?.id]);
+
+  // Initial cloud messages fetch from Supabase when conversation opens
+  useEffect(() => {
+    if (!activeConversationId || !isSupabaseConfigured) return;
+
+    // Skip Supabase queries for conversations that are local mock data
+    if (isMockConversation(activeConversationId)) {
+      return;
+    }
+
+    const safeConvId = toSafeUuid(activeConversationId);
+    
+    // 1. Fetch existing messages from chat_messages table
+    fetchMessagesFromSupabase(safeConvId)
+      .then((cloudMsgs) => {
+        if (cloudMsgs && cloudMsgs.length > 0) {
+          setMessages((prev) => {
+            const map = new Map<string, ChatMessage>();
+            // Keep messages belonging to other conversations
+            prev.filter((m) => m.conversationId !== safeConvId).forEach((m) => map.set(m.id, m));
+            // Add messages loaded from chat_messages table
+            cloudMsgs.forEach((m) => map.set(m.id, m));
+            return Array.from(map.values());
+          });
+        }
+      })
+      .catch((err) => {
+        console.error('[Supabase fetchMessages error]:', err);
+      });
+
+    // 2. Realtime listener for incoming messages on chat_messages table
+    const channel = supabase
+      .channel(`rt_chat_msgs_${safeConvId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'chat_messages',
+          filter: `conversation_id=eq.${safeConvId}`,
+        },
+        (payload) => {
+          const row = payload.new as any;
+          if (!row) return;
+          const incoming: ChatMessage = {
+            id: row.id,
+            conversationId: row.conversation_id,
+            businessId: '',
+            businessName: '',
+            senderId: row.sender_id,
+            senderName: row.sender_id,
+            senderRole: 'student',
+            recipientId: row.recipient_id,
+            recipientName: 'Participant',
+            text: row.text || '',
+            isRead: Boolean(row.is_read),
+            deliveryState: row.is_read ? 'read' : 'delivered',
+            orderSnippet: row.order_snippet || undefined,
+            timestamp: row.created_at,
+          };
+          setMessages((prev) => {
+            if (prev.some((m) => m.id === incoming.id)) return prev;
+            return [...prev, incoming];
+          });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [activeConversationId]);
+
   const handleIncomingMessage = (msg: ChatMessage, conv?: ChatConversation) => {
     setMessages((prev) => {
       if (prev.some((m) => m.id === msg.id)) return prev;
@@ -347,6 +365,12 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
       type: 'ACCEPT_REQUEST',
       payload: { conversationId },
     });
+
+    const target = conversations.find((c) => c.id === conversationId);
+    if (target) {
+      upsertConversationInSupabase({ ...target, isMessageRequest: false, requestStatus: 'accepted' })
+        .catch((err) => console.error('[Supabase acceptMessageRequest Error]:', err));
+    }
   };
 
   const declineMessageRequest = (conversationId: string) => {
@@ -354,6 +378,11 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
     setMessages((prev) => prev.filter((m) => m.conversationId !== conversationId));
     if (activeConversationId === conversationId) {
       setActiveConversationId(null);
+    }
+    const target = conversations.find((c) => c.id === conversationId);
+    if (target) {
+      upsertConversationInSupabase({ ...target, requestStatus: 'declined' })
+        .catch((err) => console.error('[Supabase declineMessageRequest Error]:', err));
     }
   };
 
@@ -367,6 +396,11 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
     );
     if (activeConversationId === conversationId) {
       setActiveConversationId(null);
+    }
+    const target = conversations.find((c) => c.id === conversationId);
+    if (target) {
+      upsertConversationInSupabase({ ...target, requestStatus: 'blocked' })
+        .catch((err) => console.error('[Supabase blockMessageRequest Error]:', err));
     }
   };
 
@@ -403,25 +437,51 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
     });
   };
 
-  const openChatWithBusiness = (
+  const openChatWithBusiness = async (
     business: StudentBusiness,
     initialMessage?: string,
     orderSnippet?: ChatOrderSnippet,
     asMessageRequest = false
   ) => {
-    const buyerId = currentUser?.id || 'usr_me';
-    const buyerName = currentUser?.fullName || 'Student Buyer';
-    const conversationId = `conv_${business.id}_${buyerId}`.replace(/[^a-zA-Z0-9_]/g, '_');
+    // Guard: trader must not be able to chat with their own store
+    const isOwnStore = Boolean(
+      currentUser &&
+        (business.ownerId === currentUser.id ||
+          (business.ownerEmail && currentUser.email && business.ownerEmail.toLowerCase() === currentUser.email.toLowerCase()))
+    );
 
-    let conv = conversations.find((c) => c.id === conversationId);
+    if (isOwnStore) {
+      emitAppToast("You can't message your own store", 'error');
+      return;
+    }
+
+    const buyerId = currentUser?.id || DEMO_USER_ME;
+    const buyerName = currentUser?.fullName || 'Student Buyer';
+    const rawConvId = `conv_${business.id}_${buyerId}`.replace(/[^a-zA-Z0-9_]/g, '_');
+    let conversationId = toSafeUuid(rawConvId);
+
+    // Try fetching/creating real marketplace_conversations row via RPC if available
+    if (isSupabaseConfigured) {
+      try {
+        const rpcConvId = await getOrCreateConversation(business.id);
+        if (rpcConvId && isValidUuid(rpcConvId)) {
+          conversationId = rpcConvId;
+        }
+      } catch (err) {
+        console.warn('[openChatWithBusiness] getOrCreateConversation notice:', err);
+      }
+    }
+
+    let conv = conversations.find((c) => c.id === conversationId || c.businessId === business.id);
     if (!conv) {
       conv = {
         id: conversationId,
-        businessId: business.id,
+        kind: 'marketplace',
+        businessId: toSafeUuid(business.id),
         businessName: business.name,
         businessImageUrl: business.imageUrl,
         traderName: business.ownerName,
-        traderId: business.ownerEmail || `trader_${business.id}`,
+        traderId: toSafeUuid(business.ownerEmail || DEMO_TRADER_TUNDE),
         traderHostel: business.hostelLocation,
         buyerId,
         buyerName,
@@ -435,13 +495,15 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
         lastSeen: 'Online',
       };
       setConversations((prev) => [conv!, ...prev]);
+    } else {
+      conversationId = conv.id;
     }
 
     setActiveConversationId(conversationId);
     setIsChatDrawerOpen(true);
 
     if (initialMessage || orderSnippet) {
-      sendMessageDirect(
+      await sendMessageDirect(
         conversationId,
         business,
         initialMessage || 'Order inquiry placed via Campus Foundry',
@@ -452,23 +514,54 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
 
   const sendMessageDirect = async (
     convId: string,
-    businessInfo: { id: string; name: string; ownerName: string; ownerEmail?: string; hostelLocation: string },
+    businessInfo: { id: string; name: string; ownerName: string; ownerEmail?: string; hostelLocation: string; imageUrl?: string },
     text: string,
     options?: SendMessageOptions
   ) => {
+    const targetConv = conversations.find((c) => c.id === convId);
+    const resolvedKind = await resolveConversationKind(convId, targetConv);
+    if (!resolvedKind) {
+      console.error('[Supabase send error]: Conversation not found in marketplace_conversations or chat_conversations for', convId);
+      emitAppToast('This conversation no longer exists', 'error');
+      setActiveConversationId(null);
+      setIsChatDrawerOpen(false);
+      return;
+    }
+    const convKind = resolvedKind;
+    const isStoreChat = convKind === 'marketplace';
+    const isMock = isMockConversation(convId);
+    let authUid: string | null = null;
+
+    // 1. Verify or auto-establish Supabase auth session only for real cloud conversations
+    if (isSupabaseConfigured && !isMock) {
+      try {
+        authUid = await ensureSupabaseAuthSession();
+      } catch (authErr) {
+        console.warn('[Supabase Auth Warning]:', authErr);
+      }
+    }
+
     const isTraderSender = currentUser?.role === 'trader';
-    const senderId = currentUser?.id || 'usr_me';
+    const senderId = authUid || currentUser?.id || DEMO_USER_ME;
     const senderName = currentUser?.fullName || (isTraderSender ? 'Student Trader' : 'Student Buyer');
 
+    const safeMsgId = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : toSafeUuid(`msg_${Date.now()}_${Math.random()}`);
+    const safeConvId = toSafeUuid(convId);
+    const recipientId = isTraderSender
+      ? toSafeUuid(businessInfo.ownerEmail || DEMO_USER_ME)
+      : toSafeUuid(businessInfo.ownerEmail || DEMO_TRADER_TUNDE);
+
     const newMessage: ChatMessage = {
-      id: `msg_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-      conversationId: convId,
-      businessId: businessInfo.id,
+      id: safeMsgId,
+      conversationId: safeConvId,
+      businessId: isStoreChat ? toSafeUuid(businessInfo.id) : '',
       businessName: businessInfo.name,
       senderId,
       senderName,
       senderRole: isTraderSender ? 'trader' : 'student',
-      recipientId: isTraderSender ? 'student_buyer' : businessInfo.ownerEmail || 'trader_' + businessInfo.id,
+      recipientId,
       recipientName: isTraderSender ? 'Student Buyer' : businessInfo.ownerName,
       text,
       timestamp: new Date().toISOString(),
@@ -476,39 +569,24 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
       deliveryState: 'sent',
       hostelLocation: currentUser?.hostelLocation || 'Lagos Hostel',
       orderSnippet: options?.orderSnippet,
+      replyToMessage: options?.replyTo,
       voiceNoteUrl: options?.voiceNote?.url,
       voiceDuration: options?.voiceNote?.duration,
       voiceWaveform: options?.voiceNote?.waveform,
-      attachmentUrl: options?.attachment?.url,
-      attachmentType: options?.attachment?.type,
-      attachmentName: options?.attachment?.name,
-      replyToMessage: options?.replyTo,
     };
 
-    // Simulate progression to 'delivered' and 'read' after micro-delay
-    setTimeout(() => {
-      setMessages((prev) =>
-        prev.map((m) => (m.id === newMessage.id ? { ...m, deliveryState: 'delivered' } : m))
-      );
-    }, 900);
-
-    setTimeout(() => {
-      setMessages((prev) =>
-        prev.map((m) => (m.id === newMessage.id ? { ...m, deliveryState: 'read', isRead: true } : m))
-      );
-    }, 2400);
-
     const updatedConv: ChatConversation = {
-      id: convId,
-      businessId: businessInfo.id,
+      id: safeConvId,
+      kind: convKind,
+      businessId: isStoreChat ? toSafeUuid(businessInfo.id) : '',
       businessName: businessInfo.name,
       businessImageUrl: (businessInfo as any).imageUrl,
       traderName: businessInfo.ownerName,
-      traderId: businessInfo.ownerEmail || 'trader_' + businessInfo.id,
+      traderId: recipientId,
       traderHostel: businessInfo.hostelLocation,
-      buyerId: isTraderSender ? 'student_buyer' : senderId,
+      buyerId: isTraderSender ? DEMO_USER_ME : senderId,
       buyerName: isTraderSender ? 'Student Buyer' : senderName,
-      lastMessage: options?.voiceNote ? '🎤 Voice message' : options?.attachment ? '📎 Media attachment' : text,
+      lastMessage: options?.voiceNote ? '🎤 Voice note' : text,
       lastMessageTimestamp: newMessage.timestamp,
       unreadCount: 0,
       isMessageRequest: false,
@@ -517,6 +595,77 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
       lastSeen: 'Online',
     };
 
+    // 2. Persist to Supabase based on conversation kind
+    if (isSupabaseConfigured && authUid && !isMock) {
+      if (convKind === 'marketplace') {
+        try {
+          // If safeConvId is a generated client UUID, get or create real conversation ID
+          let realMarketplaceConvId = safeConvId;
+          if (businessInfo.id && businessInfo.id !== '00000000-0000-4000-8000-000000000000') {
+            try {
+              const rpcConvId = await getOrCreateConversation(businessInfo.id);
+              if (rpcConvId && isValidUuid(rpcConvId)) {
+                realMarketplaceConvId = rpcConvId;
+              }
+            } catch (rpcErr) {
+              console.warn('[MarketplaceChat] getOrCreateConversation fallback:', rpcErr);
+            }
+          }
+
+          const marketplaceMsg = await apiSendMessage(
+            realMarketplaceConvId,
+            text,
+            senderId,
+            undefined,
+            {
+              voiceNoteUrl: options?.voiceNote?.url,
+              voiceDuration: options?.voiceNote?.duration,
+              attachmentUrl: options?.attachment?.url,
+              attachmentType: options?.attachment?.type,
+            }
+          );
+          newMessage.id = marketplaceMsg.id;
+          newMessage.timestamp = marketplaceMsg.createdAt;
+          newMessage.conversationId = realMarketplaceConvId;
+          updatedConv.id = realMarketplaceConvId;
+        } catch (dbErr: any) {
+          const errCode = dbErr?.code || dbErr?.statusCode || 'unknown';
+          const errMsg = dbErr?.message || String(dbErr);
+          const errDetails = dbErr?.details || null;
+          if (errCode === '42501' || errMsg.includes('permission denied')) {
+            console.warn('[Supabase save notice (RLS permission 42501)]:', { message: errMsg, code: errCode, details: errDetails, payload: newMessage });
+          } else {
+            console.error('[Supabase save error]:', { message: errMsg, code: errCode, details: errDetails, payload: newMessage });
+            emitAppToast(`Could not send (code ${errCode})`, 'error');
+            throw dbErr;
+          }
+        }
+      } else {
+        // Direct conversation: verify row in chat_conversations FIRST
+        const conversationExists = await ensureConversationInSupabase(updatedConv, authUid);
+        if (!conversationExists) {
+          console.error('[Supabase send error]: Conversation row creation/check failed for', safeConvId);
+          emitAppToast('Failed to send message: Conversation thread could not be created', 'error');
+          return;
+        }
+        try {
+          await insertChatMessageInSupabase(newMessage, authUid);
+        } catch (dbErr: any) {
+          const errCode = dbErr?.code || dbErr?.statusCode || 'unknown';
+          const errMsg = dbErr?.message || String(dbErr);
+          const errDetails = dbErr?.details || null;
+          if (errCode === '42501' || errMsg.includes('permission denied')) {
+            console.warn('[Supabase save notice (RLS permission 42501)]:', { message: errMsg, code: errCode, details: errDetails, payload: newMessage });
+          } else {
+            console.error('[Supabase save error]:', { message: errMsg, code: errCode, details: errDetails, payload: newMessage });
+            emitAppToast(`Could not send (code ${errCode})`, 'error');
+            throw dbErr;
+          }
+        }
+      }
+    }
+
+    // 3. Update local state
     handleIncomingMessage(newMessage, updatedConv);
 
     broadcastChannelRef.current?.postMessage({
