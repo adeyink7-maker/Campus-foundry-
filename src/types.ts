@@ -1,4 +1,4 @@
-export type UserRole = 'student' | 'trader';
+export type UserRole = 'user' | 'student' | 'trader' | 'admin';
 export type AccountType = 'BUYER' | 'TRADER';
 export type StudentLevel = '100L' | '200L' | '300L' | '400L' | '500L' | 'Postgraduate' | 'Postgrad';
 
@@ -47,6 +47,8 @@ export interface PoliticalProfile {
   endorsementsCount: number;
 }
 
+export type StaffRole = 'student_verifier' | 'page_moderator' | 'super_admin' | null;
+
 export interface AppUser {
   id: string;
   email: string;
@@ -56,6 +58,9 @@ export interface AppUser {
   accountType?: AccountType;
   matricNumber?: string;
   university?: string;
+  campus?: string;
+  session?: string;
+  coverUrl?: string;
   hostelLocation?: string;
   faculty?: string;
   department?: string;
@@ -80,6 +85,9 @@ export interface AppUser {
   badges?: string[];
   projects?: StudentProject[];
   isVerified?: boolean;
+  isAdmin?: boolean;
+  staffRole?: StaffRole;
+  verifiedAt?: string;
   unilorinDomain?: string;
   
   socialLinks?: {
@@ -88,6 +96,25 @@ export interface AppUser {
     twitter?: string;
     portfolio?: string;
   };
+}
+
+export type VerificationStatus = 'pending' | 'approved' | 'rejected';
+
+export interface VerificationRequest {
+  id: string;
+  userId: string;
+  proofUrl: string;
+  note?: string;
+  status: VerificationStatus;
+  reviewedBy?: string;
+  reviewedAt?: string;
+  createdAt: string;
+  applicantName?: string;
+  applicantEmail?: string;
+  applicantFaculty?: string;
+  applicantDepartment?: string;
+  applicantLevel?: StudentLevel;
+  applicantAvatarUrl?: string;
 }
 
 export type StudentUser = AppUser;
@@ -389,6 +416,13 @@ export interface CampusPost {
     businessId: string;
     imageUrl?: string;
   };
+  // Page Post Extension Fields
+  pageId?: string;
+  pageName?: string;
+  pageLogoUrl?: string;
+  pageType?: 'club' | 'news';
+  pageIsVerified?: boolean;
+  isBreaking?: boolean;
 }
 
 export interface SnapViewerRecord {
@@ -769,4 +803,108 @@ export interface DashboardStats {
   daily: Array<{ day: string; revenue: number; orders: number }>;
   topProducts: Array<{ name: string; qty: number; revenue: number }>;
 }
+
+// ==========================================
+// Hubs Pages & Clubs & News Outlet Data Models
+// ==========================================
+export type HubPageType = 'club' | 'news';
+export type PageJoinMode = 'open' | 'request' | 'follow_only';
+export type PageStatus = 'pending' | 'approved' | 'rejected';
+export type PageMemberRole = 'owner' | 'admin' | 'member' | 'follower';
+export type PageMemberStatus = 'active' | 'pending';
+export type PagePostKind = 'announcement' | 'event' | 'poll' | 'article' | 'breaking';
+export type PagePostStatus = 'published' | 'pending' | 'removed';
+
+export interface HubPage {
+  id: string;
+  type: HubPageType;
+  name: string;
+  slug: string;
+  description: string;
+  logoUrl?: string;
+  coverUrl?: string;
+  ownerId: string;
+  isVerified: boolean;
+  joinMode: PageJoinMode;
+  status: PageStatus;
+  note?: string;
+  createdAt: string;
+  // Joined or computed properties
+  membersCount?: number;
+  followersCount?: number;
+  myRole?: PageMemberRole | null;
+  myStatus?: PageMemberStatus | null;
+  isMuted?: boolean;
+}
+
+export interface PageMember {
+  id: string;
+  pageId: string;
+  userId: string;
+  role: PageMemberRole;
+  status: PageMemberStatus;
+  isMuted?: boolean;
+  createdAt: string;
+  // Joined user fields
+  userName?: string;
+  userUsername?: string;
+  userAvatarUrl?: string;
+}
+
+export interface PagePost {
+  id: string;
+  pageId: string;
+  authorId: string;
+  kind: PagePostKind;
+  title?: string;
+  body: string;
+  imageUrl?: string;
+  eventDate?: string;
+  eventLocation?: string;
+  pollOptions?: Array<{ id: string; option: string; votes: number }>;
+  isBreaking?: boolean;
+  status: PagePostStatus;
+  createdAt: string;
+  // Joined fields from pages
+  pageName?: string;
+  pageLogoUrl?: string;
+  pageType?: HubPageType;
+  pageIsVerified?: boolean;
+}
+
+export interface PageReport {
+  id: string;
+  pageId?: string;
+  postId?: string;
+  reporterId: string;
+  reason: string;
+  status: 'pending' | 'reviewed' | 'dismissed';
+  createdAt: string;
+  // Joined details
+  reporterName?: string;
+  postTitleOrBody?: string;
+  pageName?: string;
+}
+
+export interface PageMessage {
+  id: string;
+  pageId: string;
+  senderId: string;
+  senderName: string;
+  senderAvatar?: string;
+  text: string;
+  createdAt: string;
+}
+
+export interface AdminActionLog {
+  id: string;
+  staffId: string;
+  action: string;
+  targetId: string;
+  details?: any;
+  createdAt: string;
+  staffName?: string;
+  staffEmail?: string;
+}
+
 

@@ -37,6 +37,9 @@ interface SidebarNavProps {
   onOpenCreatePost?: () => void;
   onOpenBecomeTrader?: () => void;
   onOpenAuth?: (mode?: 'signin' | 'signup' | 'unilorin-otp') => void;
+  onOpenAdminVerification?: () => void;
+  onOpenAdminPages?: () => void;
+  onOpenStaffManagement?: () => void;
 }
 
 export const SidebarNav = ({
@@ -46,6 +49,9 @@ export const SidebarNav = ({
   onOpenCreatePost,
   onOpenBecomeTrader,
   onOpenAuth,
+  onOpenAdminVerification,
+  onOpenAdminPages,
+  onOpenStaffManagement,
 }: SidebarNavProps) => {
   const { currentUser, signOut } = useAuth();
   const { unreadTotalCount, pendingRequestsCount, openChatDrawer } = useChat();
@@ -148,8 +154,8 @@ export const SidebarNav = ({
     },
     {
       id: 'dashboard',
-      label: 'Profile & Dashboard',
-      sublabel: 'Portfolio & Ventures',
+      label: 'Profile',
+      sublabel: 'Posts, Products & ID',
       icon: User,
     },
   ];
@@ -250,7 +256,7 @@ export const SidebarNav = ({
                   <span className="text-base font-bold text-white tracking-tight">Campus Foundry</span>
                   <span className="flex h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
                 </div>
-                <p className="text-[11px] font-medium text-emerald-400">UNILORIN Social Ecosystem</p>
+                <p className="text-[11px] font-medium text-emerald-400">Student Venture Ecosystem</p>
               </div>
             </div>
 
@@ -400,6 +406,57 @@ export const SidebarNav = ({
                 </span>
               )}
             </motion.button>
+
+            {/* Role-Based Staff Administration Buttons */}
+            {(currentUser?.staffRole || currentUser?.isAdmin) && (
+              <div className="space-y-1.5 pt-2 border-t border-neutral-800">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-purple-400 px-3 block">
+                  Staff Admin Desk
+                </span>
+
+                {(currentUser?.staffRole === 'student_verifier' || currentUser?.staffRole === 'super_admin' || currentUser?.isAdmin) && onOpenAdminVerification && (
+                  <motion.button
+                    whileTap={{ scale: 0.97 }}
+                    type="button"
+                    onClick={() => onOpenAdminVerification()}
+                    className="w-full flex items-center justify-between rounded-2xl px-3 py-2 text-xs font-semibold bg-amber-950/30 hover:bg-amber-900/50 border border-amber-500/30 text-amber-300 transition-colors cursor-pointer group"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <ShieldCheck className="h-4 w-4 text-amber-400" />
+                      <span>Student Verifier</span>
+                    </div>
+                  </motion.button>
+                )}
+
+                {(currentUser?.staffRole === 'page_moderator' || currentUser?.staffRole === 'super_admin' || currentUser?.isAdmin) && onOpenAdminPages && (
+                  <motion.button
+                    whileTap={{ scale: 0.97 }}
+                    type="button"
+                    onClick={() => onOpenAdminPages()}
+                    className="w-full flex items-center justify-between rounded-2xl px-3 py-2 text-xs font-semibold bg-emerald-950/30 hover:bg-emerald-900/50 border border-emerald-500/30 text-emerald-300 transition-colors cursor-pointer group"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <ShieldCheck className="h-4 w-4 text-emerald-400" />
+                      <span>Admin Pages Control</span>
+                    </div>
+                  </motion.button>
+                )}
+
+                {(currentUser?.staffRole === 'super_admin' || currentUser?.isAdmin) && onOpenStaffManagement && (
+                  <motion.button
+                    whileTap={{ scale: 0.97 }}
+                    type="button"
+                    onClick={() => onOpenStaffManagement()}
+                    className="w-full flex items-center justify-between rounded-2xl px-3 py-2 text-xs font-semibold bg-purple-950/40 hover:bg-purple-900/60 border border-purple-500/30 text-purple-300 transition-colors cursor-pointer group"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <ShieldCheck className="h-4 w-4 text-purple-400" />
+                      <span>Staff Management</span>
+                    </div>
+                  </motion.button>
+                )}
+              </div>
+            )}
           </div>
         </div>
 

@@ -22,7 +22,8 @@ import {
   FileText,
   Edit3,
   Calendar,
-  Star
+  Star,
+  CheckCircle2
 } from 'lucide-react';
 import { AppUser } from '../../types';
 import { Achievement, PlayerCardData, PlayerCardSettings } from '../../types/playercard';
@@ -133,7 +134,7 @@ export const PlayerCardOverlay: React.FC<PlayerCardOverlayProps> = ({ onOpenProf
 
   const accentColor = cardData?.settings.accentColor || '#f59e0b';
   const jerseyNumber = cardData?.settings.jerseyNumber || 10;
-  const tagline = cardData?.settings.tagline || `${activeUser?.department || 'Student'} • ${activeUser?.faculty || 'UNILORIN'}`;
+  const tagline = cardData?.settings.tagline || `${activeUser?.department || 'Student'} • ${activeUser?.faculty || activeUser?.university || 'Campus'}`;
 
   const getCategoryIcon = (cat: string) => {
     switch (cat) {
@@ -268,7 +269,7 @@ export const PlayerCardOverlay: React.FC<PlayerCardOverlayProps> = ({ onOpenProf
                       CAMPUS FOUNDRY PLAYER CARD
                     </span>
                     <span className="text-xs text-white font-bold flex items-center gap-1.5">
-                      {activeUser.university || 'UNILORIN'}
+                      {activeUser.university || activeUser.campus || 'Campus University'}
                       {activeUser.isVerified && (
                         <ShieldCheck className="h-3.5 w-3.5 text-emerald-400 inline" />
                       )}
@@ -377,8 +378,13 @@ export const PlayerCardOverlay: React.FC<PlayerCardOverlayProps> = ({ onOpenProf
 
                   <div className="pl-2">
                     <div className="flex items-center justify-between gap-2">
-                      <h2 className="text-xl sm:text-2xl font-black text-white font-mono tracking-tight uppercase truncate">
-                        {activeUser.fullName}
+                      <h2 className="text-xl sm:text-2xl font-black text-white font-mono tracking-tight uppercase truncate flex items-center gap-1.5">
+                        <span>{activeUser.fullName}</span>
+                        {activeUser.isVerified && (
+                          <span title="Verified Student">
+                            <CheckCircle2 className="h-5 w-5 text-sky-400 fill-sky-400/20 shrink-0 inline" />
+                          </span>
+                        )}
                       </h2>
                       <span className="text-xs font-mono font-bold text-neutral-400">
                         {activeUser.username || `@${activeUser.email.split('@')[0]}`}

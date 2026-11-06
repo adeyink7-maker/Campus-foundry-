@@ -16,13 +16,18 @@ import {
   Flame,
   Volume2,
   VolumeX,
-  Share2
+  Share2,
+  MoreVertical,
+  Trash2,
+  Loader2
 } from 'lucide-react';
 import { CampusSnap } from '../types';
 import { StorySticker } from '../types/stickers';
 import { StickerOverlayContainer } from './stickers/StickerOverlayContainer';
 import { useScreenSecurity } from '../mobile/database/useScreenSecurity';
 import { LongPressAvatar } from './playercard/LongPressAvatar';
+import { useAuth } from '../context/AuthContext';
+import { deleteSnapFromSupabase } from '../services/supabase';
 
 interface SnapViewerModalProps {
   snap: CampusSnap | null;
@@ -31,6 +36,7 @@ interface SnapViewerModalProps {
   onNextSnap: () => void;
   onPrevSnap: () => void;
   onOpenAuthorProfile?: (authorId: string, authorDetails?: any) => void;
+  onDeleteSnap?: (snapId: string) => void;
 }
 
 export const SnapViewerModal = ({
@@ -40,13 +46,19 @@ export const SnapViewerModal = ({
   onNextSnap,
   onPrevSnap,
   onOpenAuthorProfile,
+  onDeleteSnap,
 }: SnapViewerModalProps) => {
+  const { currentUser } = useAuth();
   const [progress, setProgress] = useState(0);
   const [liked, setLiked] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [isViewersDrawerOpen, setIsViewersDrawerOpen] = useState(false);
   const [screenshotAttempted, setScreenshotAttempted] = useState(false);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   // Seamless Swipe Gesture State
   const [dragOffsetX, setDragOffsetX] = useState(0);

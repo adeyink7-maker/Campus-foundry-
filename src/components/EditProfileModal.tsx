@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { UNIVERSITIES, DEFAULT_UNIVERSITY } from '../constants/universities';
 import { X, Camera, Check, User, Phone, Globe, ShieldCheck, Award, Sparkles, Eye, Palette } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { usePlayerCard } from '../context/PlayerCardContext';
@@ -24,9 +25,9 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
 
   const [fullName, setFullName] = useState(currentUser?.fullName || '');
   const [username, setUsername] = useState(currentUser?.username || '');
-  const [bio, setBio] = useState(
-    currentUser?.bio || 'UNILORIN student passionate about innovation, trade & campus culture ✨'
-  );
+  const [university, setUniversity] = useState(currentUser?.university || DEFAULT_UNIVERSITY);
+  const [session, setSession] = useState(currentUser?.session || '');
+  const [bio, setBio] = useState(currentUser?.bio || '');
   const [level, setLevel] = useState<StudentLevel>((currentUser?.level as StudentLevel) || '300L');
   const [faculty, setFaculty] = useState(currentUser?.faculty || 'Communication & Information Sciences');
   const [department, setDepartment] = useState(currentUser?.department || 'Computer Science');
@@ -49,6 +50,8 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
     updateUser({
       fullName,
       username: cleanUsername,
+      university,
+      session,
       bio,
       level,
       faculty,
@@ -153,6 +156,34 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
             </div>
           </div>
 
+          {/* University Name & Academic Session */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-bold text-neutral-300 block mb-1">University Name</label>
+              <select
+                value={university}
+                onChange={(e) => setUniversity(e.target.value)}
+                className="w-full px-3 py-2 rounded-xl bg-neutral-800 border border-neutral-700 text-xs text-white focus:outline-none focus:border-amber-400"
+              >
+                {UNIVERSITIES.map((uni) => (
+                  <option key={uni} value={uni}>
+                    {uni}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs font-bold text-neutral-300 block mb-1">Academic Session</label>
+              <input
+                type="text"
+                value={session}
+                onChange={(e) => setSession(e.target.value)}
+                placeholder="e.g. 2025/2026"
+                className="w-full px-3 py-2 rounded-xl bg-neutral-800 border border-neutral-700 text-xs text-white focus:outline-none focus:border-amber-400 font-mono"
+              />
+            </div>
+          </div>
+
           {/* Bio */}
           <div>
             <label className="text-xs font-bold text-neutral-300 block mb-1">Profile Bio</label>
@@ -160,7 +191,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
               rows={3}
               value={bio}
               onChange={(e) => setBio(e.target.value)}
-              placeholder="Tell UNILORIN about your venture, skills or campus role..."
+              placeholder="Tell peers about your skills, venture, or campus interests..."
               className="w-full px-3 py-2 rounded-xl bg-neutral-800 border border-neutral-700 text-xs text-white focus:outline-none focus:border-amber-400 resize-none"
             />
           </div>

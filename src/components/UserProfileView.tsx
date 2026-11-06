@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { 
   Grid, 
   Bookmark, 
-  Tag, 
   Store, 
   Share2, 
   MessageCircle, 
@@ -13,22 +12,29 @@ import {
   ExternalLink, 
   ShieldCheck, 
   Heart, 
-  Eye, 
   MessageSquare, 
   Edit3, 
   X,
-  Phone,
   CheckCircle2,
-  Trophy,
-  LogOut
+  LogOut,
+  Settings,
+  Plus,
+  MoreVertical,
+  IdCard,
+  Camera,
+  ShoppingBag,
+  AlertTriangle,
+  Lock,
+  UserX,
+  FileText
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useChat } from '../context/ChatContext';
-import { usePlayerCard } from '../context/PlayerCardContext';
 import { emitAppToast } from '../services/supabase';
-import { LongPressAvatar } from './playercard/LongPressAvatar';
 import { AppUser, CampusPost, CampusSnap, StudentBusiness } from '../types';
 import { EditProfileModal } from './EditProfileModal';
+import { VerificationModal } from './VerificationModal';
+import { StudentIDCard } from './playercard/StudentIDCard';
 
 export interface UserProfileViewProps {
   user?: AppUser | null;
@@ -47,30 +53,42 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
   userSnaps = [],
   userBusinesses = [],
   onOpenCreatePost,
+  onOpenCreateBusiness,
   onSelectBusiness,
-  onOpenTraderProfile,
 }) => {
-  const { currentUser, toggleFollowUser, signOut } = useAuth();
+  const { currentUser, toggleFollowUser, signOut, syncUserProfileFromSupabase, updateUser } = useAuth();
   const { openChatDrawer } = useChat();
-  const { openPlayerCard, openEditor } = usePlayerCard();
 
-  const [activeTab, setActiveTab] = useState<'grid' | 'ventures' | 'saved' | 'activity'>('grid');
+  const activeUser = targetUserProp || currentUser;
+  const isOwner = Boolean(currentUser && activeUser && currentUser.id === activeUser.id);
+
+  // Tabs: 'posts' | 'products' | 'saved' | 'student_card'
+  const [activeTab, setActiveTab] = useState<'posts' | 'products' | 'saved' | 'student_card'>('posts');
+  
+  // Modals & Menu
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isVerificationModalOpen, setIsVerificationModalOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [showMoreUserMenu, setShowMoreUserMenu] = useState(false);
+  
+  // Follow state
   const [isFollowedLocal, setIsFollowedLocal] = useState(false);
+  
+  // Cover banner edit state
+  const [coverUrl, setCoverUrl] = useState<string>(activeUser?.coverUrl || '');
+  const [coverImageFailed, setCoverImageFailed] = useState(false);
+  
+  // Lightbox preview modal
   const [selectedGridItem, setSelectedGridItem] = useState<{
     id: string;
-    mediaUrl: string;
+    mediaUrl?: string;
     caption: string;
     likesCount: number;
-    viewsCount?: number;
+    commentsCount?: number;
     createdAt: string;
   } | null>(null);
 
   const [shareToast, setShareToast] = useState(false);
-
-  // If no target user provided, default to currently logged-in account
-  const activeUser = targetUserProp || currentUser;
-  const isOwner = Boolean(currentUser && activeUser && currentUser.id === activeUser.id);
 
   if (!activeUser) {
     return (
@@ -80,17 +98,23 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
     );
   }
 
-  // Derive metrics
   const displayUsername = activeUser.username
     ? activeUser.username.startsWith('@')
       ? activeUser.username
       : `@${activeUser.username}`
     : `@${activeUser.email.split('@')[0]}`;
 
+  const universityName = activeUser.university || activeUser.campus || '';
   const postsCount = userPosts.length + userSnaps.length;
-  const followersCount = (activeUser.followersCount || 128) + (isFollowedLocal ? 1 : 0);
-  const followingCount = activeUser.followingCount || 84;
-  const venturesCount = userBusinesses.length;
+  const followersCount = (activeUser.followersCount ?? 0) + (isFollowedLocal ? 1 : 0);
+  const followingCount = activeUser.followingCount ?? 0;
+  const productsCount = userBusinesses.length;
+
+  // Fake check for active story ring around avatar
+  const hasActiveStory = userSnaps.length > 0;
+
+  // Followers / Following list modal
+  const [activeListModal, setActiveListModal] = useState<'followers' | 'following' | null>(null);
 
   const handleToggleFollow = () => {
     setIsFollowedLocal(!isFollowedLocal);
@@ -113,84 +137,121 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
     openChatDrawer();
   };
 
+  const handleChangeCoverImage = () => {
+    const sampleCovers = [
+      'https://images.unsplash.com/photo-1523050854058-8df90110c9f1?w=1200',
+      'https://images.unsplash.com/photo-1541339907198-e08756dedf3f?w=1200',
+      'https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?w=1200',
+      'https://images.unsplash.com/photo-1522202176988-66273c2fd55f?w=1200',
+    ];
+    const nextCover = sampleCovers[(sampleCovers.indexOf(coverUrl) + 1) % sampleCovers.length];
+    setCoverUrl(nextCover);
+    setCoverImageFailed(false);
+    if (isOwner) {
+      updateUser({ coverUrl: nextCover });
+    }
+  };
+
   return (
-    <div className="w-full max-w-4xl mx-auto px-4 py-6 text-white font-sans">
+    <div className="w-full max-w-4xl mx-auto px-0 sm:px-4 py-0 sm:py-6 text-white font-sans">
       
-      {/* 1. INSTAGRAM-STYLE HEADER & IDENTITY SECTION */}
-      <div className="flex flex-col md:flex-row items-center md:items-start gap-6 md:gap-10 pb-8 border-b border-neutral-800">
+      {/* 1. PROFILE HEADER WITH COVER BANNER */}
+      <div className="relative bg-neutral-900 rounded-none sm:rounded-3xl border-b sm:border border-neutral-800 overflow-hidden shadow-xl">
         
-        {/* Profile Avatar with Long Press to World Cup Card */}
-        <div className="relative group">
-          <LongPressAvatar
-            user={activeUser}
-            size="2xl"
-            avatarClassName="rounded-full border-4 border-amber-400 p-1 shadow-2xl bg-neutral-900"
-            onClick={() => openPlayerCard(activeUser)}
-          />
+        {/* Cover Banner */}
+        <div className="relative h-36 sm:h-48 w-full bg-neutral-950 overflow-hidden">
+          {coverUrl && !coverImageFailed ? (
+            <img 
+              src={coverUrl} 
+              alt="Cover Banner" 
+              loading="lazy"
+              onError={() => setCoverImageFailed(true)}
+              className="w-full h-full object-cover opacity-80"
+            />
+          ) : (
+            <div className="w-full h-full bg-gradient-to-r from-neutral-950 via-neutral-900 to-orange-950/70 relative">
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(249,115,22,0.35),transparent_70%)]" />
+            </div>
+          )}
+          <div className="absolute inset-0 bg-gradient-to-t from-neutral-950 via-neutral-950/20 to-transparent" />
+          
+          {/* Change Cover Button (Owner only) */}
           {isOwner && (
             <button
               type="button"
-              onClick={() => openEditor(activeUser)}
-              className="absolute bottom-1 right-1 p-2 rounded-full bg-amber-500 text-neutral-950 shadow-lg hover:scale-110 transition-transform cursor-pointer z-10"
-              title="Player Card Studio"
+              onClick={handleChangeCoverImage}
+              className="absolute top-3 right-3 sm:right-14 p-2 rounded-xl bg-black/60 hover:bg-black text-white text-xs font-semibold backdrop-blur-md border border-white/10 flex items-center gap-1.5 transition-all cursor-pointer"
+              title="Change cover photo"
             >
-              <Trophy className="h-4 w-4" />
+              <Camera className="h-3.5 w-3.5 text-orange-400" />
+              <span className="hidden sm:inline">Change Cover</span>
+            </button>
+          )}
+
+          {/* Settings Icon (Owner top right) */}
+          {isOwner && (
+            <button
+              type="button"
+              onClick={() => setIsSettingsOpen(true)}
+              className="absolute top-3 right-3 p-2 rounded-xl bg-black/60 hover:bg-black text-white backdrop-blur-md border border-white/10 transition-colors cursor-pointer"
+              title="Profile Settings"
+            >
+              <Settings className="h-4 w-4 text-neutral-300 hover:text-white" />
             </button>
           )}
         </div>
 
-        {/* Identity & Metadata Details */}
-        <div className="flex-1 text-center md:text-left space-y-3 w-full">
+        {/* Profile Content Overlay */}
+        <div className="px-4 sm:px-6 pb-6 pt-0 relative z-10">
           
-          {/* Top Row: Username & Action Buttons */}
-          <div className="flex flex-col sm:flex-row items-center justify-center md:justify-start gap-3">
-            <h1 className="text-xl md:text-2xl font-black text-white font-mono tracking-tight flex items-center gap-2">
-              <span>{displayUsername}</span>
-              {(activeUser.role === 'trader' || activeUser.accountType === 'TRADER') && (
-                <span title="Verified Campus Account">
-                  <ShieldCheck className="h-5 w-5 text-emerald-400 fill-emerald-400/20" />
-                </span>
+          {/* Avatar row with stats/buttons */}
+          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 -mt-14 sm:-mt-16 mb-4">
+            
+            {/* Avatar with Story Ring and Add Story badge */}
+            <div className="relative self-center sm:self-auto shrink-0">
+              <div className={`p-1 rounded-full ${
+                hasActiveStory ? 'bg-gradient-to-tr from-amber-500 via-orange-500 to-rose-500' : 'bg-neutral-800'
+              }`}>
+                <img
+                  src={activeUser.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300'}
+                  alt={activeUser.fullName}
+                  loading="lazy"
+                  className="h-24 w-24 sm:h-28 sm:w-28 rounded-full object-cover border-4 border-neutral-900 bg-neutral-950"
+                />
+              </div>
+
+              {/* Add story shortcut on owner avatar */}
+              {isOwner && (
+                <button
+                  type="button"
+                  onClick={onOpenCreatePost}
+                  className="absolute bottom-1 right-1 p-1.5 rounded-full bg-orange-500 text-neutral-950 shadow-lg hover:scale-110 transition-transform cursor-pointer border-2 border-neutral-900"
+                  title="Add Story / Post"
+                >
+                  <Plus className="h-4 w-4 stroke-[3]" />
+                </button>
               )}
-            </h1>
+            </div>
 
-            {/* Action Buttons */}
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => openPlayerCard(activeUser)}
-                className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-amber-500/20 to-orange-500/20 hover:from-amber-500/30 hover:to-orange-500/30 text-amber-300 text-xs font-bold shadow transition-all active:scale-95 border border-amber-500/40 flex items-center gap-1.5 cursor-pointer"
-                title="Hold avatar or click to reveal World Cup Player Card"
-              >
-                <Trophy className="h-3.5 w-3.5 text-amber-400" />
-                <span>Player Card</span>
-              </button>
-
+            {/* Profile Action Buttons */}
+            <div className="flex items-center justify-center sm:justify-end gap-2 self-center sm:self-end">
               {isOwner ? (
                 <>
                   <button
                     type="button"
                     onClick={() => setIsEditModalOpen(true)}
-                    className="px-4 py-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-white text-xs font-bold shadow transition-all active:scale-95 border border-neutral-700 flex items-center gap-1.5"
+                    className="px-4 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-white text-xs font-bold border border-neutral-700 transition-all flex items-center gap-1.5 cursor-pointer"
                   >
-                    <Edit3 className="h-3.5 w-3.5 text-amber-400" />
+                    <Edit3 className="h-3.5 w-3.5 text-orange-400" />
                     <span>Edit Profile</span>
                   </button>
                   <button
                     type="button"
                     onClick={handleShareProfile}
-                    className="p-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white transition-colors border border-neutral-700"
-                    title="Share Profile Link"
+                    className="p-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white transition-colors border border-neutral-700 cursor-pointer"
+                    title="Share profile"
                   >
                     <Share2 className="h-4 w-4" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={signOut}
-                    className="px-3.5 py-1.5 rounded-xl bg-neutral-800 hover:bg-rose-950/40 text-neutral-300 hover:text-rose-400 border border-neutral-700 hover:border-rose-500/40 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
-                    title="Sign Out of Profile"
-                  >
-                    <LogOut className="h-3.5 w-3.5" />
-                    <span>Sign Out</span>
                   </button>
                 </>
               ) : (
@@ -198,10 +259,10 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                   <button
                     type="button"
                     onClick={handleToggleFollow}
-                    className={`px-5 py-1.5 rounded-xl text-xs font-bold shadow transition-all active:scale-95 flex items-center gap-1.5 ${
+                    className={`px-5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
                       isFollowedLocal
                         ? 'bg-neutral-800 text-neutral-200 border border-neutral-700 hover:bg-neutral-700'
-                        : 'bg-gradient-to-r from-amber-500 to-orange-500 text-neutral-950 hover:from-amber-400 hover:to-orange-400 font-extrabold'
+                        : 'bg-orange-500 text-neutral-950 hover:bg-orange-400 font-extrabold shadow-md'
                     }`}
                   >
                     {isFollowedLocal ? (
@@ -220,120 +281,174 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                   <button
                     type="button"
                     onClick={handleDirectMessage}
-                    className="px-4 py-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-white text-xs font-bold border border-neutral-700 transition-all flex items-center gap-1.5"
+                    className="px-4 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-white text-xs font-bold border border-neutral-700 transition-all flex items-center gap-1.5 cursor-pointer"
                   >
-                    <MessageCircle className="h-3.5 w-3.5 text-sky-400" />
+                    <MessageCircle className="h-3.5 w-3.5 text-orange-400" />
                     <span>Message</span>
                   </button>
+
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setShowMoreUserMenu(!showMoreUserMenu)}
+                      className="p-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white transition-colors border border-neutral-700 cursor-pointer"
+                    >
+                      <MoreVertical className="h-4 w-4" />
+                    </button>
+                    {showMoreUserMenu && (
+                      <div className="absolute right-0 top-11 z-30 w-40 rounded-2xl bg-neutral-900 border border-neutral-800 shadow-2xl p-1 text-xs space-y-0.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            emitAppToast(`Blocked @${activeUser.username || activeUser.fullName}`, 'success');
+                            setShowMoreUserMenu(false);
+                          }}
+                          className="w-full text-left px-3 py-2 rounded-xl hover:bg-neutral-800 text-neutral-300 font-medium"
+                        >
+                          Block User
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            emitAppToast(`Reported @${activeUser.username || activeUser.fullName}`, 'success');
+                            setShowMoreUserMenu(false);
+                          }}
+                          className="w-full text-left px-3 py-2 rounded-xl hover:bg-neutral-800 text-rose-400 font-medium"
+                        >
+                          Report Profile
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </>
               )}
             </div>
+
           </div>
 
-          {/* Activity Metrics Bar (Desktop & Tablet) */}
-          <div className="flex items-center justify-center md:justify-start gap-6 py-2 text-xs text-neutral-300 border-y border-neutral-800/80 md:border-none">
-            <div>
-              <span className="font-extrabold text-white text-sm md:text-base mr-1">{postsCount}</span>
-              <span className="text-neutral-400">posts</span>
-            </div>
-            <div>
-              <span className="font-extrabold text-white text-sm md:text-base mr-1">{followersCount}</span>
-              <span className="text-neutral-400">followers</span>
-            </div>
-            <div>
-              <span className="font-extrabold text-white text-sm md:text-base mr-1">{followingCount}</span>
-              <span className="text-neutral-400">following</span>
-            </div>
-            {venturesCount > 0 && (
+          {/* User Name, Username, Verified Badge & Bio */}
+          <div className="space-y-2">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <div>
-                <span className="font-extrabold text-amber-400 text-sm md:text-base mr-1">{venturesCount}</span>
-                <span className="text-neutral-400">trades</span>
+                <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight flex items-center gap-2">
+                  <span>{activeUser.fullName}</span>
+                  {activeUser.isVerified && (
+                    <span title="Verified Student">
+                      <CheckCircle2 className="h-5 w-5 text-sky-400 fill-sky-400/20" />
+                    </span>
+                  )}
+                </h1>
+                <p className="text-xs font-mono text-neutral-400 font-semibold mt-0.5">
+                  {displayUsername}
+                </p>
+              </div>
+
+              {/* Tappable Stats Row */}
+              <div className="flex items-center gap-6 py-2 px-4 rounded-2xl bg-neutral-950/60 border border-neutral-800/80 text-xs text-neutral-300 self-start sm:self-auto">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('posts')}
+                  className="text-center hover:opacity-80 transition-opacity cursor-pointer"
+                >
+                  <span className="font-extrabold text-white text-sm block leading-none">{postsCount}</span>
+                  <span className="text-[10px] text-neutral-400">Posts</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveListModal('followers')}
+                  className="text-center hover:opacity-80 transition-opacity cursor-pointer"
+                >
+                  <span className="font-extrabold text-white text-sm block leading-none">{followersCount}</span>
+                  <span className="text-[10px] text-neutral-400">Followers</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveListModal('following')}
+                  className="text-center hover:opacity-80 transition-opacity cursor-pointer"
+                >
+                  <span className="font-extrabold text-white text-sm block leading-none">{followingCount}</span>
+                  <span className="text-[10px] text-neutral-400">Following</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Department, Level, Faculty & University Chips */}
+            <div className="flex flex-wrap items-center gap-1.5 pt-1">
+              <span className="px-2.5 py-1 rounded-lg bg-orange-500/10 border border-orange-500/20 text-orange-400 text-xs font-semibold flex items-center gap-1">
+                <GraduationCap className="h-3.5 w-3.5" />
+                <span>{activeUser.level || '300L'}</span>
+              </span>
+              <span className="px-2.5 py-1 rounded-lg bg-neutral-800 border border-neutral-700 text-neutral-200 text-xs font-medium">
+                {activeUser.department || 'Computer Science'}
+              </span>
+              <span className="px-2.5 py-1 rounded-lg bg-neutral-800 border border-neutral-700 text-neutral-300 text-xs font-medium">
+                {activeUser.faculty || 'Sciences'}
+              </span>
+              {universityName && (
+                <span className="px-2.5 py-1 rounded-lg bg-neutral-950 border border-neutral-800 text-neutral-400 text-xs font-mono font-medium">
+                  🎓 {universityName}
+                </span>
+              )}
+            </div>
+
+            {/* Bio */}
+            <p className="text-xs sm:text-sm text-neutral-300 pt-1 leading-relaxed max-w-2xl">
+              {activeUser.bio || 'Campus student connecting, discovering opportunities, and trading on Campus Foundry.'}
+            </p>
+
+            {activeUser.hostelLocation && (
+              <div className="flex items-center gap-1 text-xs text-emerald-400 font-medium pt-0.5">
+                <MapPin className="h-3.5 w-3.5" />
+                <span>{activeUser.hostelLocation}</span>
               </div>
             )}
           </div>
 
-          {/* Bio & Meta Info */}
-          <div className="space-y-1.5 text-xs text-neutral-200 leading-relaxed">
-            <h2 className="font-extrabold text-white text-sm">{activeUser.fullName}</h2>
-            
-            <p className="whitespace-pre-line text-neutral-300">
-              {activeUser.bio || 'UNILORIN student passionate about campus culture, trade & tech initiatives.'}
-            </p>
-
-            <div className="flex flex-wrap items-center justify-center md:justify-start gap-x-3 gap-y-1 pt-1 text-[11px] text-neutral-400 font-medium">
-              <div className="flex items-center gap-1">
-                <GraduationCap className="h-3.5 w-3.5 text-amber-400" />
-                <span>{activeUser.level || '300L'} • {activeUser.department || 'Computer Science'}</span>
-              </div>
-
-              {activeUser.hostelLocation && (
-                <div className="flex items-center gap-1">
-                  <MapPin className="h-3.5 w-3.5 text-emerald-400" />
-                  <span>{activeUser.hostelLocation}</span>
-                </div>
-              )}
-
-              {activeUser.socialLinks?.portfolio && (
-                <a
-                  href={activeUser.socialLinks.portfolio}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-1 text-sky-400 hover:underline font-bold"
-                >
-                  <ExternalLink className="h-3 w-3" />
-                  <span>{activeUser.socialLinks.portfolio.replace(/^https?:\/\//, '')}</span>
-                </a>
-              )}
-            </div>
-          </div>
-
         </div>
+
       </div>
 
-      {/* Share Toast */}
       {shareToast && (
         <div className="my-3 p-2.5 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-xs font-bold text-center animate-in fade-in">
-          Link copied to clipboard! Share on WhatsApp status or campus group chats.
+          Profile link copied to clipboard!
         </div>
       )}
 
-      {/* 2. TABBED NAVIGATION BAR */}
-      <div className="flex items-center justify-center border-b border-neutral-800 text-xs font-bold uppercase tracking-wider text-neutral-400">
+      {/* 2. TABS UNDER HEADER */}
+      <div className="mt-4 border-b border-neutral-800 flex items-center justify-around sm:justify-start sm:gap-8 text-xs font-bold uppercase tracking-wider text-neutral-400 bg-neutral-950/80 backdrop-blur-md sticky top-16 z-20">
         <button
           type="button"
-          onClick={() => setActiveTab('grid')}
-          className={`flex items-center gap-2 py-3 px-6 border-b-2 transition-all cursor-pointer ${
-            activeTab === 'grid'
-              ? 'border-amber-400 text-amber-400 font-extrabold'
+          onClick={() => setActiveTab('posts')}
+          className={`flex items-center gap-2 py-3 px-3 sm:px-4 border-b-2 transition-all cursor-pointer ${
+            activeTab === 'posts'
+              ? 'border-orange-500 text-orange-400 font-extrabold'
               : 'border-transparent hover:text-white'
           }`}
         >
           <Grid className="h-4 w-4" />
-          <span>Posts & Snaps</span>
+          <span>Posts</span>
         </button>
 
-        {venturesCount > 0 && (
-          <button
-            type="button"
-            onClick={() => setActiveTab('ventures')}
-            className={`flex items-center gap-2 py-3 px-6 border-b-2 transition-all cursor-pointer ${
-              activeTab === 'ventures'
-                ? 'border-amber-400 text-amber-400 font-extrabold'
-                : 'border-transparent hover:text-white'
-            }`}
-          >
-            <Store className="h-4 w-4" />
-            <span>Ventures ({venturesCount})</span>
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={() => setActiveTab('products')}
+          className={`flex items-center gap-2 py-3 px-3 sm:px-4 border-b-2 transition-all cursor-pointer ${
+            activeTab === 'products'
+              ? 'border-orange-500 text-orange-400 font-extrabold'
+              : 'border-transparent hover:text-white'
+          }`}
+        >
+          <ShoppingBag className="h-4 w-4" />
+          <span>Products {productsCount > 0 && `(${productsCount})`}</span>
+        </button>
 
         {isOwner && (
           <button
             type="button"
             onClick={() => setActiveTab('saved')}
-            className={`flex items-center gap-2 py-3 px-6 border-b-2 transition-all cursor-pointer ${
+            className={`flex items-center gap-2 py-3 px-3 sm:px-4 border-b-2 transition-all cursor-pointer ${
               activeTab === 'saved'
-                ? 'border-amber-400 text-amber-400 font-extrabold'
+                ? 'border-orange-500 text-orange-400 font-extrabold'
                 : 'border-transparent hover:text-white'
             }`}
           >
@@ -344,106 +459,81 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
 
         <button
           type="button"
-          onClick={() => setActiveTab('activity')}
-          className={`flex items-center gap-2 py-3 px-6 border-b-2 transition-all cursor-pointer ${
-            activeTab === 'activity'
-              ? 'border-amber-400 text-amber-400 font-extrabold'
+          onClick={() => setActiveTab('student_card')}
+          className={`flex items-center gap-2 py-3 px-3 sm:px-4 border-b-2 transition-all cursor-pointer ${
+            activeTab === 'student_card'
+              ? 'border-orange-500 text-orange-400 font-extrabold'
               : 'border-transparent hover:text-white'
           }`}
         >
-          <Tag className="h-4 w-4" />
-          <span>Tagged</span>
+          <IdCard className="h-4 w-4" />
+          <span>Student Card</span>
         </button>
       </div>
 
-      {/* 3. TAB CONTENT VIEWS */}
-      <div className="py-6">
+      {/* 3. TAB CONTENTS */}
+      <div className="py-4">
         
-        {/* TAB 1: INSTAGRAM 3x3 PHOTO & SNAP GRID */}
-        {activeTab === 'grid' && (
+        {/* TAB 1: POSTS (3-column photo/video grid with text posts) */}
+        {activeTab === 'posts' && (
           <div>
             {userPosts.length === 0 && userSnaps.length === 0 ? (
               <div className="flex flex-col items-center justify-center p-12 text-center bg-neutral-900/40 rounded-3xl border border-neutral-800">
-                <Grid className="h-12 w-12 text-neutral-600 mb-3" />
-                <h3 className="text-sm font-bold text-white mb-1">No Posts or Snaps Yet</h3>
+                <Grid className="h-10 w-10 text-neutral-600 mb-2" />
+                <h3 className="text-sm font-bold text-white mb-1">No Posts Yet</h3>
                 <p className="text-xs text-neutral-400 max-w-xs mb-4">
-                  When {isOwner ? 'you share' : `${activeUser.fullName} shares`} photos or status snaps, they will appear in this grid.
+                  {isOwner ? 'Share your first update or snap with peers.' : `${activeUser.fullName} has not posted anything yet.`}
                 </p>
                 {isOwner && onOpenCreatePost && (
                   <button
                     type="button"
                     onClick={onOpenCreatePost}
-                    className="px-4 py-2 rounded-xl bg-amber-500 text-neutral-950 text-xs font-bold hover:bg-amber-400 transition-all"
+                    className="px-4 py-2 rounded-xl bg-orange-500 text-neutral-950 text-xs font-bold hover:bg-orange-400 transition-all cursor-pointer"
                   >
                     Share First Post
                   </button>
                 )}
               </div>
             ) : (
-              <div className="grid grid-cols-3 gap-1 sm:gap-3">
+              <div className="grid grid-cols-3 gap-1.5 sm:gap-3">
                 {userPosts.map((post) => (
                   <div
                     key={post.id}
                     onClick={() =>
                       setSelectedGridItem({
                         id: post.id,
-                        mediaUrl: post.mediaUrl || 'https://images.unsplash.com/photo-1523050854058-8df90110c9f1?w=800',
+                        mediaUrl: post.mediaUrl,
                         caption: post.content,
                         likesCount: post.likesCount,
+                        commentsCount: post.commentsCount,
                         createdAt: post.createdAt,
                       })
                     }
-                    className="group relative aspect-square bg-neutral-900 rounded-xl overflow-hidden cursor-pointer shadow-md"
+                    className="group relative aspect-square bg-neutral-900 rounded-2xl overflow-hidden cursor-pointer shadow-md border border-neutral-800"
                   >
-                    <img
-                      src={post.mediaUrl || 'https://images.unsplash.com/photo-1523050854058-8df90110c9f1?w=800'}
-                      alt={post.content}
-                      className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-                    />
+                    {post.mediaUrl ? (
+                      <img
+                        src={post.mediaUrl}
+                        alt={post.content}
+                        loading="lazy"
+                        className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                      />
+                    ) : (
+                      <div className="h-full w-full p-3 flex flex-col justify-between bg-gradient-to-br from-neutral-900 to-neutral-950 text-neutral-200">
+                        <p className="text-[11px] font-medium line-clamp-4 leading-relaxed">{post.content}</p>
+                        <span className="text-[9px] font-mono text-orange-400 font-bold">Text Post</span>
+                      </div>
+                    )}
                     
-                    {/* Hover Overlay Stats */}
+                    {/* Hover Overlay */}
                     <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-4 text-white font-bold text-xs sm:text-sm">
                       <span className="flex items-center gap-1">
-                        <Heart className="h-4 w-4 fill-white text-white" />
+                        <Heart className="h-4 w-4 fill-white" />
                         <span>{post.likesCount}</span>
                       </span>
                       <span className="flex items-center gap-1">
-                        <MessageSquare className="h-4 w-4 fill-white text-white" />
+                        <MessageSquare className="h-4 w-4 fill-white" />
                         <span>{post.commentsCount}</span>
-                      </span>
-                    </div>
-                  </div>
-                ))}
-
-                {userSnaps.map((snap) => (
-                  <div
-                    key={snap.id}
-                    onClick={() =>
-                      setSelectedGridItem({
-                        id: snap.id,
-                        mediaUrl: snap.mediaUrl,
-                        caption: snap.caption,
-                        likesCount: 18,
-                        viewsCount: snap.viewsCount,
-                        createdAt: snap.createdAt,
-                      })
-                    }
-                    className="group relative aspect-square bg-neutral-900 rounded-xl overflow-hidden cursor-pointer shadow-md border-2 border-amber-400/60"
-                  >
-                    <img
-                      src={snap.mediaUrl}
-                      alt={snap.caption}
-                      className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-                    />
-                    
-                    <div className="absolute top-2 right-2 px-1.5 py-0.5 rounded bg-amber-500 text-neutral-950 text-[9px] font-black uppercase">
-                      Snap
-                    </div>
-
-                    <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-4 text-white font-bold text-xs sm:text-sm">
-                      <span className="flex items-center gap-1">
-                        <Eye className="h-4 w-4" />
-                        <span>{snap.viewsCount}</span>
                       </span>
                     </div>
                   </div>
@@ -453,88 +543,106 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
           </div>
         )}
 
-        {/* TAB 2: VENTURES & TRADES */}
-        {activeTab === 'ventures' && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {userBusinesses.map((biz) => (
-              <div
-                key={biz.id}
-                onClick={() => onSelectBusiness?.(biz)}
-                className="p-4 rounded-2xl bg-neutral-900 border border-neutral-800 hover:border-amber-400/50 transition-all cursor-pointer shadow-lg space-y-3"
-              >
-                <div className="flex items-center gap-3">
-                  <img
-                    src={biz.imageUrl}
-                    alt={biz.name}
-                    className="h-12 w-12 rounded-xl object-cover border border-neutral-700"
-                  />
-                  <div>
-                    <h4 className="text-sm font-bold text-white flex items-center gap-1.5">
-                      <span>{biz.name}</span>
-                      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
-                    </h4>
-                    <span className="text-[10px] text-amber-400 font-semibold">{biz.category}</span>
-                  </div>
-                </div>
+        {/* TAB 2: PRODUCTS (Marketplace listings) */}
+        {activeTab === 'products' && (
+          <div>
+            <div className="flex items-center justify-between mb-4 px-1">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-neutral-400">
+                Marketplace Listings ({userBusinesses.length})
+              </h3>
+              {isOwner && onOpenCreateBusiness && (
+                <button
+                  type="button"
+                  onClick={onOpenCreateBusiness}
+                  className="px-3 py-1.5 rounded-xl bg-orange-500 hover:bg-orange-400 text-neutral-950 text-xs font-bold transition-all shadow-md cursor-pointer flex items-center gap-1"
+                >
+                  <Plus className="h-3.5 w-3.5 stroke-[3]" />
+                  <span>Add Listing</span>
+                </button>
+              )}
+            </div>
 
-                <p className="text-xs text-neutral-300 line-clamp-2">{biz.description}</p>
-
-                <div className="flex items-center justify-between text-xs pt-2 border-t border-neutral-800">
-                  <span className="font-extrabold text-emerald-400">From ₦{biz.startingPrice.toLocaleString()}</span>
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (onOpenTraderProfile) {
-                          onOpenTraderProfile(biz);
-                        } else {
-                          onSelectBusiness?.(biz);
-                        }
-                      }}
-                      className="px-3 py-1 rounded-xl bg-amber-500/20 text-amber-300 hover:bg-amber-500 hover:text-neutral-950 text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer"
-                    >
-                      <Store className="h-3 w-3" />
-                      <span>Trader Portfolio</span>
-                    </button>
-                    <a
-                      href={`https://wa.me/${biz.whatsapp}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      onClick={(e) => e.stopPropagation()}
-                      className="px-3 py-1 rounded-xl bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500 hover:text-neutral-950 text-[11px] font-bold transition-all flex items-center gap-1"
-                    >
-                      <Phone className="h-3 w-3" />
-                      <span>WhatsApp</span>
-                    </a>
-                  </div>
-                </div>
+            {userBusinesses.length === 0 ? (
+              <div className="flex flex-col items-center justify-center p-12 text-center bg-neutral-900/40 rounded-3xl border border-neutral-800">
+                <Store className="h-10 w-10 text-neutral-600 mb-2" />
+                <h3 className="text-sm font-bold text-white mb-1">No Active Listings</h3>
+                <p className="text-xs text-neutral-400 max-w-xs mb-4">
+                  {isOwner ? 'Turn your skills or items into campus listings.' : 'This user has no active trade listings.'}
+                </p>
+                {isOwner && onOpenCreateBusiness && (
+                  <button
+                    type="button"
+                    onClick={onOpenCreateBusiness}
+                    className="px-4 py-2 rounded-xl bg-orange-500 text-neutral-950 text-xs font-bold hover:bg-orange-400 transition-all cursor-pointer"
+                  >
+                    + Add First Listing
+                  </button>
+                )}
               </div>
-            ))}
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {userBusinesses.map((biz) => (
+                  <div
+                    key={biz.id}
+                    onClick={() => onSelectBusiness?.(biz)}
+                    className="p-4 rounded-2xl bg-neutral-900 border border-neutral-800 hover:border-orange-500/50 transition-all cursor-pointer shadow-lg space-y-3"
+                  >
+                    <div className="flex items-center gap-3">
+                      <img
+                        src={biz.imageUrl}
+                        alt={biz.name}
+                        loading="lazy"
+                        className="h-12 w-12 rounded-xl object-cover border border-neutral-700 shrink-0"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <h4 className="text-sm font-bold text-white truncate flex items-center gap-1">
+                          <span>{biz.name}</span>
+                          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                        </h4>
+                        <span className="text-[10px] text-orange-400 font-semibold block">{biz.category}</span>
+                      </div>
+                    </div>
+
+                    <p className="text-xs text-neutral-300 line-clamp-2 leading-relaxed">{biz.description}</p>
+
+                    <div className="flex items-center justify-between text-xs pt-2 border-t border-neutral-800">
+                      <span className="font-extrabold text-emerald-400">₦{biz.startingPrice.toLocaleString()}</span>
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 font-bold uppercase">
+                        In Stock
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
-        {/* TAB 3: SAVED & BOOKMARKS */}
-        {activeTab === 'saved' && (
-          <div className="p-8 text-center bg-neutral-900/40 rounded-3xl border border-neutral-800">
-            <Bookmark className="h-10 w-10 text-neutral-600 mx-auto mb-2" />
-            <h4 className="text-xs font-bold text-white mb-1">Only You Can See What You've Saved</h4>
-            <p className="text-[11px] text-neutral-400">Save campus study materials, marketplace listings, or posts to view them later.</p>
+        {/* TAB 3: SAVED (Owner Only) */}
+        {activeTab === 'saved' && isOwner && (
+          <div className="p-10 text-center bg-neutral-900/40 rounded-3xl border border-neutral-800 space-y-2">
+            <Bookmark className="h-10 w-10 text-neutral-600 mx-auto" />
+            <h4 className="text-xs font-bold text-white">Your Saved Bookmarks</h4>
+            <p className="text-[11px] text-neutral-400 max-w-xs mx-auto">
+              Posts and marketplace listings you bookmark will appear here for quick access.
+            </p>
           </div>
         )}
 
-        {/* TAB 4: TAGGED & ACTIVITY */}
-        {activeTab === 'activity' && (
-          <div className="p-8 text-center bg-neutral-900/40 rounded-3xl border border-neutral-800">
-            <Tag className="h-10 w-10 text-neutral-600 mx-auto mb-2" />
-            <h4 className="text-xs font-bold text-white mb-1">Photos & Snaps of You</h4>
-            <p className="text-[11px] text-neutral-400">When people tag {displayUsername} in campus snaps or SUG political endorsements, they'll show up here.</p>
+        {/* TAB 4: STUDENT CARD */}
+        {activeTab === 'student_card' && (
+          <div className="max-w-md mx-auto">
+            <StudentIDCard
+              currentUser={activeUser}
+              onOpenAuth={() => {}}
+              onOpenGetVerified={() => setIsVerificationModalOpen(true)}
+            />
           </div>
         )}
 
       </div>
 
-      {/* 4. LIGHTBOX PREVIEW MODAL */}
+      {/* 4. LIGHTBOX MODAL FOR POSTS */}
       {selectedGridItem && (
         <div 
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-md p-4"
@@ -547,16 +655,18 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
             <button
               type="button"
               onClick={() => setSelectedGridItem(null)}
-              className="absolute top-3 right-3 z-20 p-2 rounded-full bg-black/60 text-white hover:bg-black"
+              className="absolute top-3 right-3 z-20 p-2 rounded-full bg-black/60 text-white hover:bg-black cursor-pointer"
             >
               <X className="h-4 w-4" />
             </button>
 
-            <img
-              src={selectedGridItem.mediaUrl}
-              alt="Grid Preview"
-              className="w-full max-h-[60vh] object-cover"
-            />
+            {selectedGridItem.mediaUrl && (
+              <img
+                src={selectedGridItem.mediaUrl}
+                alt="Post Preview"
+                className="w-full max-h-[60vh] object-cover"
+              />
+            )}
 
             <div className="p-4 space-y-2">
               <p className="text-xs text-white leading-relaxed">{selectedGridItem.caption}</p>
@@ -572,11 +682,140 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
         </div>
       )}
 
+      {/* SETTINGS MODAL */}
+      {isSettingsOpen && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md"
+          onClick={() => setIsSettingsOpen(false)}
+        >
+          <div 
+            className="w-full max-w-md rounded-3xl bg-neutral-900 border border-neutral-800 p-6 space-y-5 text-white shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-3 border-b border-neutral-800">
+              <h3 className="text-sm font-bold flex items-center gap-2">
+                <Settings className="h-4 w-4 text-orange-400" />
+                <span>Account & Privacy Settings</span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => setIsSettingsOpen(false)}
+                className="p-1 rounded-lg text-neutral-400 hover:text-white cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="space-y-2 text-xs">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsSettingsOpen(false);
+                  setIsEditModalOpen(true);
+                }}
+                className="w-full p-3 rounded-2xl bg-neutral-950 border border-neutral-800 hover:border-neutral-700 flex items-center justify-between text-neutral-200 cursor-pointer"
+              >
+                <span className="flex items-center gap-2 font-medium">
+                  <Edit3 className="h-4 w-4 text-orange-400" />
+                  <span>Edit Profile Details</span>
+                </span>
+                <span className="text-[10px] text-neutral-500">Name, bio, level</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setIsSettingsOpen(false);
+                  setIsVerificationModalOpen(true);
+                }}
+                className="w-full p-3 rounded-2xl bg-neutral-950 border border-neutral-800 hover:border-neutral-700 flex items-center justify-between text-neutral-200 cursor-pointer"
+              >
+                <span className="flex items-center gap-2 font-medium">
+                  <ShieldCheck className="h-4 w-4 text-emerald-400" />
+                  <span>Student Verification</span>
+                </span>
+                <span className="text-[10px] text-neutral-500">
+                  {currentUser?.isVerified ? 'Verified ✓' : 'Get verified'}
+                </span>
+              </button>
+            </div>
+
+            <div className="pt-2 border-t border-neutral-800">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsSettingsOpen(false);
+                  signOut();
+                }}
+                className="w-full py-3 rounded-2xl bg-rose-950/30 hover:bg-rose-900/50 border border-rose-500/30 text-rose-300 font-bold text-xs transition-colors flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <LogOut className="h-4 w-4" />
+                <span>Sign Out of Account</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Edit Profile Modal */}
       <EditProfileModal
         isOpen={isEditModalOpen}
         onClose={() => setIsEditModalOpen(false)}
       />
+
+      {/* Student Verification Upload Modal */}
+      <VerificationModal
+        isOpen={isVerificationModalOpen}
+        onClose={() => setIsVerificationModalOpen(false)}
+        onStatusUpdated={() => {
+          if (currentUser) {
+            syncUserProfileFromSupabase(currentUser.id);
+          }
+        }}
+      />
+
+      {/* Followers / Following List Modal */}
+      {activeListModal && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in"
+          onClick={() => setActiveListModal(null)}
+        >
+          <div 
+            className="w-full max-w-sm rounded-3xl bg-neutral-900 border border-neutral-800 p-5 space-y-4 text-white shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-3 border-b border-neutral-800">
+              <h3 className="text-sm font-bold capitalize">
+                {activeListModal} ({activeListModal === 'followers' ? followersCount : followingCount})
+              </h3>
+              <button
+                type="button"
+                onClick={() => setActiveListModal(null)}
+                className="p-1 rounded-lg text-neutral-400 hover:text-white cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="space-y-2 max-h-60 overflow-y-auto">
+              <div className="p-3 rounded-2xl bg-neutral-950 border border-neutral-800/80 flex items-center justify-between text-xs">
+                <div className="flex items-center gap-2.5">
+                  <div className="h-8 w-8 rounded-full bg-orange-500/20 text-orange-400 flex items-center justify-center font-bold">
+                    🎓
+                  </div>
+                  <div>
+                    <span className="font-bold text-white block">Campus Peer</span>
+                    <span className="text-[10px] text-neutral-500 font-mono">@campus_student</span>
+                  </div>
+                </div>
+                <span className="px-2 py-0.5 rounded-full bg-neutral-800 text-[10px] text-neutral-300 font-bold">
+                  Student
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

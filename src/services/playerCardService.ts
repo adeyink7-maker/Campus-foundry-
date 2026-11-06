@@ -12,12 +12,11 @@ const DEMO_ACHIEVEMENTS: Record<string, Achievement[]> = {
     {
       id: 'ach_1',
       userId: 'default',
-      title: 'UNILORIN Hackathon Champion 2026',
+      title: 'Campus Hackathon Champion 2026',
       description: '1st place out of 64 teams building campus emergency & transit routing systems.',
       icon: 'Trophy',
       category: 'award',
       dateAchieved: '2026-02-14',
-      linkUrl: 'https://unilorin.edu.ng/hackathon-2026',
       isVerified: true,
       isVisible: true,
       sortOrder: 1,
@@ -57,7 +56,6 @@ const DEMO_ACHIEVEMENTS: Record<string, Achievement[]> = {
       icon: 'Users',
       category: 'leadership',
       dateAchieved: '2025-05-18',
-      linkUrl: 'https://gdsc.community.dev/unilorin',
       isVerified: true,
       isVisible: true,
       sortOrder: 4,
@@ -71,12 +69,11 @@ const DEFAULT_SETTINGS: PlayerCardSettings = {
   accentColor: '#f59e0b', // Amber Champion Gold
   heroVideoUrl: undefined,
   showStats: true,
-  tagline: 'UNILORIN Midfield Playmaker & Open Source Architect',
+  tagline: 'Campus Midfield Playmaker & Open Source Architect',
   topSkill: 'Full-Stack Distributed Engineering & UI/UX',
   jerseyNumber: 10,
   portfolioLinks: [
     { title: 'GitHub Portfolio', url: 'https://github.com', type: 'github' },
-    { title: 'Project Case Studies', url: 'https://unilorin.edu.ng', type: 'website' },
   ],
 };
 
@@ -174,10 +171,10 @@ export async function getPlayerCardData(user: AppUser): Promise<PlayerCardData> 
     settings,
     achievements,
     stats: {
-      postsCount: user.postsCount || 18,
-      followersCount: user.followersCount || 142,
-      followingCount: user.followingCount || 89,
-      projectsCount: achievements.filter((a) => a.category === 'project').length || 3,
+      postsCount: user.postsCount || 0,
+      followersCount: user.followersCount || 0,
+      followingCount: user.followingCount || 0,
+      projectsCount: achievements.filter((a) => a.category === 'project').length || 0,
       venturesCount: user.role === 'trader' ? 1 : 0,
     },
   };

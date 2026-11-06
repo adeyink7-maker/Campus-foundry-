@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { MoreVertical, Trash2, AlertCircle, Loader2 } from 'lucide-react';
 import { OfflineReplyManager } from '../database/OfflineReplyManager';
+import { deleteSnapFromSupabase } from '../../services/supabase';
 
 export interface MobileStoryItem {
   id: string;
@@ -20,6 +22,8 @@ export interface StoriesViewerScreenProps {
   stories: MobileStoryItem[];
   onClose: () => void;
   onOpenChatWithAuthor?: (authorId: string, replyInitialText?: string) => void;
+  currentUserId?: string;
+  onSnapDeleted?: (snapId: string) => void;
 }
 
 export const StoriesViewerScreen: React.FC<StoriesViewerScreenProps> = ({
@@ -27,6 +31,8 @@ export const StoriesViewerScreen: React.FC<StoriesViewerScreenProps> = ({
   stories,
   onClose,
   onOpenChatWithAuthor,
+  currentUserId,
+  onSnapDeleted,
 }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [progress, setProgress] = useState(0);
@@ -35,6 +41,32 @@ export const StoriesViewerScreen: React.FC<StoriesViewerScreenProps> = ({
   const [showHeartBurst, setShowHeartBurst] = useState(false);
   const [reactionsSent, setReactionsSent] = useState<string[]>([]);
   const [isOfflineQueued, setIsOfflineQueued] = useState(false);
+  const [showMenu, setShowMenu] = useState(false);
+  const [showConfirmDelete, setShowConfirmDelete] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const handleDeleteSnap = async () => {
+    if (!currentStory) return;
+    setIsDeleting(true);
+    setDeleteError(null);
+
+    try {
+      const res = await deleteSnapFromSupabase(currentStory.id, currentStory.mediaUrl);
+      if (res.success) {
+        onSnapDeleted?.(currentStory.id);
+        setIsDeleting(false);
+        setShowConfirmDelete(false);
+        onClose();
+      } else {
+        setIsDeleting(false);
+        setDeleteError(res.error || 'Failed to delete snap. Please try again.');
+      }
+    } catch (err: any) {
+      setIsDeleting(false);
+      setDeleteError(err?.message || 'Failed to delete snap. Please try again.');
+    }
+  };
 
   const currentStory = stories[currentIndex] || stories[0];
   const STORY_DURATION_MS = 5000;
@@ -152,7 +184,7 @@ export const StoriesViewerScreen: React.FC<StoriesViewerScreenProps> = ({
             />
           ) : (
             <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-indigo-900 via-neutral-900 to-amber-950 p-6 text-center text-white">
-              <p className="text-xl font-medium leading-relaxed">{currentStory?.caption || 'UNILORIN Campus Update'}</p>
+              <p className="text-xl font-medium leading-relaxed">{currentStory?.caption || 'Campus Update'}</p>
             </div>
           )}
 
@@ -201,7 +233,7 @@ export const StoriesViewerScreen: React.FC<StoriesViewerScreenProps> = ({
                 <div className="flex items-center gap-1.5">
                   <span className="text-sm font-bold text-white tracking-wide">{author.username}</span>
                   <span className="text-[10px] text-amber-400 bg-amber-500/20 px-1.5 py-0.5 rounded-full border border-amber-500/30">
-                    UNILORIN
+                    Campus
                   </span>
                 </div>
                 <p className="text-[11px] text-neutral-300">
@@ -211,12 +243,45 @@ export const StoriesViewerScreen: React.FC<StoriesViewerScreenProps> = ({
             </div>
 
             {/* Actions: Pause status indicator & Close button */}
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 relative">
               {isPaused && (
                 <span className="text-[10px] bg-black/60 text-amber-300 px-2 py-0.5 rounded-full backdrop-blur-md">
                   Paused
                 </span>
               )}
+              {currentUserId && currentUserId === author.userId && (
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowMenu(!showMenu);
+                    }}
+                    className="h-8 w-8 rounded-full bg-black/60 hover:bg-neutral-800 flex items-center justify-center text-white backdrop-blur-md transition-colors"
+                    title="Snap Options"
+                  >
+                    <MoreVertical className="h-4 w-4" />
+                  </button>
+
+                  {showMenu && (
+                    <div className="absolute right-0 top-10 w-44 rounded-2xl bg-neutral-900 border border-neutral-800 shadow-2xl p-1.5 z-30 animate-in fade-in duration-150">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setShowMenu(false);
+                          setShowConfirmDelete(true);
+                        }}
+                        className="w-full px-3 py-2 rounded-xl text-left text-xs font-bold text-rose-400 hover:bg-rose-500/10 flex items-center gap-2 transition-colors"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        <span>Delete Snap</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <button
                 type="button"
                 onClick={onClose}
@@ -286,6 +351,54 @@ export const StoriesViewerScreen: React.FC<StoriesViewerScreenProps> = ({
             </button>
           </form>
         </div>
+
+        {/* Delete Confirmation Modal */}
+        {showConfirmDelete && (
+          <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-in fade-in duration-200">
+            <div className="w-full max-w-xs rounded-3xl bg-neutral-900 border border-neutral-800 p-6 text-center space-y-4 shadow-2xl">
+              <div className="w-12 h-12 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-400 flex items-center justify-center mx-auto">
+                <Trash2 className="h-6 w-6" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-sm font-bold text-white">Delete this snap?</h3>
+                <p className="text-xs text-neutral-400">This can't be undone and will be removed instantly.</p>
+              </div>
+
+              {deleteError && (
+                <div className="p-3 rounded-xl bg-rose-500/20 border border-rose-500/40 text-rose-300 text-xs font-semibold flex items-center gap-2 text-left">
+                  <AlertCircle className="h-4 w-4 shrink-0" />
+                  <span>{deleteError}</span>
+                </div>
+              )}
+
+              <div className="flex items-center gap-2 pt-2">
+                <button
+                  type="button"
+                  disabled={isDeleting}
+                  onClick={() => setShowConfirmDelete(false)}
+                  className="flex-1 py-2.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-xs font-semibold text-neutral-300 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={isDeleting}
+                  onClick={handleDeleteSnap}
+                  className="flex-1 py-2.5 rounded-xl bg-rose-500 hover:bg-rose-400 text-neutral-950 font-bold text-xs shadow-lg transition-all flex items-center justify-center gap-1.5"
+                >
+                  {isDeleting ? (
+                    <>
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      <span>Deleting...</span>
+                    </>
+                  ) : (
+                    <span>Delete</span>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

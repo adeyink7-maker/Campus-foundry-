@@ -101,6 +101,10 @@ import {
   AppUser
 } from './types';
 
+import { AdminPagesManagementModal } from './components/AdminPagesManagementModal';
+import { AdminVerificationModal } from './components/AdminVerificationModal';
+import { StaffManagementModal } from './components/StaffManagementModal';
+
 // Supabase Realtime & CRUD Services
 import {
   isSupabaseConfigured,
@@ -116,6 +120,7 @@ import {
   createCampusSnapInSupabase,
   resetDatabaseToZero,
   deletePostsByUserInSupabase,
+  fetchPagePostsFromSupabase,
 } from './services/supabase';
 
 const STORAGE_BUSINESSES_KEY = 'campus_foundry_custom_businesses_v4';
@@ -138,6 +143,9 @@ function MainApp() {
   const [isCreatePostOpen, setIsCreatePostOpen] = useState(false);
   const [isCreateBusinessOpen, setIsCreateBusinessOpen] = useState(false);
   const [isBecomeTraderOpen, setIsBecomeTraderOpen] = useState(false);
+  const [isAdminPagesOpen, setIsAdminPagesOpen] = useState(false);
+  const [isAdminVerificationOpen, setIsAdminVerificationOpen] = useState(false);
+  const [isStaffManagementOpen, setIsStaffManagementOpen] = useState(false);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [authRole, setAuthRole] = useState<UserRole>('student');
 
@@ -179,7 +187,7 @@ function MainApp() {
   };
 
   const handleAuthSuccess = () => {
-    showToast(`Welcome! You are now signed in to UNILORIN Campus Foundry.`);
+    showToast(`Welcome! You are now signed in to Campus Foundry.`);
     if (pendingActionRef.current) {
       const act = pendingActionRef.current;
       pendingActionRef.current = null;
@@ -242,9 +250,10 @@ function MainApp() {
           deletePostsByUserInSupabase('adeyink7'),
         ]);
 
-        const [remotePosts, remoteSnaps] = await Promise.all([
+        const [remotePosts, remoteSnaps, pagePosts] = await Promise.all([
           fetchCampusPostsFromSupabase(),
           fetchCampusSnapsFromSupabase(),
+          fetchPagePostsFromSupabase(),
         ]);
 
         if (!isMounted) return;
@@ -258,9 +267,34 @@ function MainApp() {
                  !id.includes('adeyiink7') && !id.includes('adeyink7');
         });
 
-        setPosts(filteredPosts);
+        // Convert PagePosts into CampusPosts format
+        const convertedPagePosts: CampusPost[] = (pagePosts || []).map((pp) => ({
+          id: pp.id,
+          authorId: pp.authorId,
+          authorName: pp.pageName || 'Campus Page',
+          authorLevel: '300L',
+          authorRole: 'student',
+          content: pp.title ? `**${pp.title}**\n${pp.body}` : pp.body,
+          category: pp.kind === 'event' ? 'Events & Sports' : 'Gist & Social',
+          mediaUrl: pp.imageUrl,
+          likesCount: 5,
+          commentsCount: 2,
+          createdAt: pp.createdAt,
+          pageId: pp.pageId,
+          pageName: pp.pageName,
+          pageLogoUrl: pp.pageLogoUrl,
+          pageType: pp.pageType,
+          pageIsVerified: pp.pageIsVerified,
+          isBreaking: pp.isBreaking,
+        }));
+
+        const mergedPosts = [...convertedPagePosts, ...filteredPosts].sort(
+          (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        );
+
+        setPosts(mergedPosts);
         try {
-          localStorage.setItem(STORAGE_POSTS_KEY, JSON.stringify(filteredPosts));
+          localStorage.setItem(STORAGE_POSTS_KEY, JSON.stringify(mergedPosts));
         } catch {}
 
         setSnaps(remoteSnaps || []);
@@ -315,7 +349,7 @@ function MainApp() {
       <div className="min-h-screen w-full bg-neutral-950 flex items-center justify-center">
         <div className="flex flex-col items-center gap-3">
           <span className="h-8 w-8 animate-spin rounded-full border-4 border-blue-500 border-t-transparent" />
-          <span className="text-xs text-neutral-400 font-medium">Loading UNILORIN Campus Foundry...</span>
+          <span className="text-xs text-neutral-400 font-medium">Loading Campus Foundry...</span>
         </div>
       </div>
     );
@@ -356,13 +390,13 @@ function MainApp() {
       username: authorDetails?.username || `@student_${authorId?.slice(0, 5) || 'unilorin'}`,
       role: 'student',
       avatarUrl: authorDetails?.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300',
-      bio: 'UNILORIN undergraduate building solutions, collaborating on research, and running campus initiatives.',
+      bio: 'Undergraduate building solutions, collaborating on research, and running campus initiatives.',
       level: authorDetails?.level || '300L',
       department: authorDetails?.department || 'Computer Science',
       faculty: authorDetails?.faculty || 'Communication & Information Sciences',
       hostelLocation: 'Zamfara Hostel Block B',
-      followersCount: 142,
-      followingCount: 88,
+      followersCount: 0,
+      followingCount: 0,
     };
 
     setTargetProfileUser(resolvedUser);
@@ -388,7 +422,7 @@ function MainApp() {
     });
 
     upsertStudentBusinessInSupabase(newBiz);
-    showToast(`"${newBiz.name}" is now listed on the UNILORIN Campus Marketplace!`);
+    showToast(`"${newBiz.name}" is now listed on the Campus Marketplace!`);
     setCurrentModule('marketplace');
     setSelectedBusiness(newBiz);
   };
@@ -518,7 +552,7 @@ function MainApp() {
         });
       }
 
-      showToast('Your post is live on the UNILORIN Campus Feed!');
+      showToast('Your post is live on the Campus Feed!');
     } catch (err: any) {
       console.error('[handlePostCreated Failure]:', err);
       throw err;
@@ -598,6 +632,7 @@ function MainApp() {
           isLoadingBusinesses={isLoadingBusinesses}
           businessesError={businessesError}
           onRetryBusinesses={loadBusinesses}
+          onOpenAdminPages={() => setIsAdminPagesOpen(true)}
         />
       ) : (
         <>
@@ -626,6 +661,9 @@ function MainApp() {
           onOpenCreatePost={() => setIsCreatePostOpen(true)}
           onOpenBecomeTrader={() => setIsBecomeTraderOpen(true)}
           onOpenAuth={handleOpenAuth}
+          onOpenAdminPages={() => setIsAdminPagesOpen(true)}
+          onOpenAdminVerification={() => setIsAdminVerificationOpen(true)}
+          onOpenStaffManagement={() => setIsStaffManagementOpen(true)}
         />
 
         <main className="flex-1 min-w-0 px-4 sm:px-6 lg:px-8 py-6">
@@ -799,6 +837,23 @@ function MainApp() {
         onClose={() => setIsCreateBusinessOpen(false)}
         onBusinessCreated={handleBusinessCreated}
         onRequireAuth={() => handleOpenAuth(undefined, 'trader')}
+      />
+
+      <AdminPagesManagementModal
+        isOpen={isAdminPagesOpen}
+        onClose={() => setIsAdminPagesOpen(false)}
+        onShowToast={showToast}
+      />
+
+      <AdminVerificationModal
+        isOpen={isAdminVerificationOpen}
+        onClose={() => setIsAdminVerificationOpen(false)}
+      />
+
+      <StaffManagementModal
+        isOpen={isStaffManagementOpen}
+        onClose={() => setIsStaffManagementOpen(false)}
+        onShowToast={showToast}
       />
 
       <ChatDrawer />

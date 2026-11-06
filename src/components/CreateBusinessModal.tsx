@@ -314,7 +314,7 @@ export const CreateBusinessModal = ({
             tagline: tagline.trim() || 'Verified student venture on UNILORIN Campus Foundry.',
             description: description.trim() || `${name} provides trusted campus services direct to hostel students.`,
             category,
-            university: 'University of Ilorin (UNILORIN)',
+            university: currentUser.university || 'Campus University',
             campus,
             hostel_location: resolvedHostelLocation,
             owner_id: currentUser.id,
@@ -339,7 +339,7 @@ export const CreateBusinessModal = ({
         if (insertError) {
           console.error('[CreateBusinessModal] Insert error:', insertError);
           if (insertError.code === '23505' || insertError.message?.toLowerCase().includes('duplicate') || insertError.message?.toLowerCase().includes('unique')) {
-            setSubmitError('You already have a registered store on UNILORIN Campus Foundry.');
+            setSubmitError('You already have a registered store on Campus Foundry.');
           } else {
             setSubmitError(mapMarketplaceError(insertError) || 'Failed to create your store. Please try again.');
           }
@@ -367,7 +367,7 @@ export const CreateBusinessModal = ({
         tagline: tagline.trim() || 'Verified student venture on UNILORIN Campus Foundry.',
         description: description.trim() || `${name} provides trusted campus services direct to hostel students.`,
         category,
-        university: 'University of Ilorin (UNILORIN)',
+        university: currentUser.university || 'Campus University',
         campus,
         hostelLocation: resolvedHostelLocation,
         ownerId: currentUser.id,
@@ -426,7 +426,7 @@ export const CreateBusinessModal = ({
                 <Store className="h-4 w-4" />
               </span>
               <h2 className="text-base font-bold text-white tracking-tight">
-                List Your Campus Trade on UNILORIN Foundry
+                List Your Campus Trade on Campus Foundry
               </h2>
             </div>
             <p className="mt-0.5 text-xs text-neutral-400">
@@ -631,7 +631,7 @@ export const CreateBusinessModal = ({
                 roomNumber={roomNumber}
                 onRoomNumberChange={setRoomNumber}
                 showRoomInput={true}
-                label="UNILORIN Base Hostel & Room / Block"
+                label="Campus Base Hostel & Room / Block"
                 roomPlaceholder="e.g. Block C Room 204"
                 required={true}
               />

@@ -60,7 +60,7 @@ export const Navbar = ({
                   Campus Foundry
                 </span>
                 <span className="rounded bg-emerald-500/10 border border-emerald-500/30 px-1.5 py-0.5 text-[9px] font-mono font-bold text-emerald-400 uppercase">
-                  UNILORIN
+                  CAMPUS
                 </span>
               </div>
               <p className="text-[10px] text-neutral-400 font-medium hidden sm:block">

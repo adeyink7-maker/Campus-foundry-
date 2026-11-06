@@ -54,8 +54,8 @@ export class AppleGoogleAuthWrapper {
       const mockUid = `apple_${Date.now()}`;
       return {
         provider: 'apple',
-        email: 'student.apple@students.unilorin.edu.ng',
-        fullName: 'UNILORIN Apple Student',
+        email: 'student.apple@campus.edu',
+        fullName: 'Campus Apple Student',
         identityToken: 'mock_apple_jwt_token',
         uid: mockUid,
       };
@@ -78,7 +78,6 @@ export class AppleGoogleAuthWrapper {
       // GoogleSignin.configure({
       //   webClientId: webClientId || process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID,
       //   offlineAccess: true,
-      //   hostedDomain: 'students.unilorin.edu.ng', // Restricts to UNILORIN domain
       // });
     } catch (e) {
       console.warn('GoogleSignin configuration scaffold:', e);
@@ -106,8 +105,8 @@ export class AppleGoogleAuthWrapper {
       const mockUid = `google_${Date.now()}`;
       return {
         provider: 'google',
-        email: '21-52ha042@students.unilorin.edu.ng',
-        fullName: 'UNILORIN Google Scholar',
+        email: 'student.google@campus.edu',
+        fullName: 'Campus Google Scholar',
         identityToken: 'mock_google_id_token',
         uid: mockUid,
       };

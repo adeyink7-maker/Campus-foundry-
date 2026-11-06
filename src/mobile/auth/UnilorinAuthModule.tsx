@@ -58,21 +58,15 @@ export const UnilorinAuthModule: React.FC<UnilorinAuthModuleProps> = ({
   }, [step, countdown]);
 
   /**
-   * Validates student email format strictly against @students.unilorin.edu.ng
+   * Validates student email format for any valid provider
    */
   const validateStudentEmail = (rawEmail: string): boolean => {
     const normalized = rawEmail.trim().toLowerCase();
-    const domain = normalized.split('@')[1];
-    if (domain !== 'students.unilorin.edu.ng') {
-      return false;
-    }
-    const username = normalized.split('@')[0];
-    return /^[a-z0-9_-]+$/i.test(username);
+    return normalized.includes('@') && normalized.includes('.') && normalized.length >= 5;
   };
 
   /**
-   * Extracts formatted UNILORIN matric number from student email
-   * e.g., 21-52ha042@students.unilorin.edu.ng -> 21/52HA042
+   * Extracts formatted student identifier from email
    */
   const extractMatricNumber = (rawEmail: string): string => {
     const username = rawEmail.trim().toLowerCase().split('@')[0];
@@ -92,12 +86,12 @@ export const UnilorinAuthModule: React.FC<UnilorinAuthModuleProps> = ({
 
     const cleanEmail = email.trim().toLowerCase();
     if (!cleanEmail) {
-      setErrorMessage('Please enter your UNILORIN student email address.');
+      setErrorMessage('Please enter your email address.');
       return;
     }
 
     if (!validateStudentEmail(cleanEmail)) {
-      setErrorMessage('Access Restricted: Only official @students.unilorin.edu.ng institutional emails are permitted.');
+      setErrorMessage('Please enter a valid email address.');
       return;
     }
 
@@ -109,13 +103,13 @@ export const UnilorinAuthModule: React.FC<UnilorinAuthModuleProps> = ({
       if (result.success) {
         setStep('OTP_VERIFY');
         setCountdown(60);
-        setSuccessMessage('A 6-digit verification code has been dispatched to your official UNILORIN webmail.');
+        setSuccessMessage('A 6-digit verification code has been sent to your email.');
       } else {
         setErrorMessage(result.message || 'Unable to transmit OTP. Please check your network connection.');
       }
     } catch (err: any) {
       setIsLoading(false);
-      setErrorMessage(err.message || 'Failed to connect to UNILORIN Auth Gateway.');
+      setErrorMessage(err.message || 'Failed to send verification code.');
     }
   };
 
@@ -135,7 +129,7 @@ export const UnilorinAuthModule: React.FC<UnilorinAuthModuleProps> = ({
       const result = await verifyStudentEmailOTP({
         email: email.trim().toLowerCase(),
         otp: code,
-        fullName: fullName.trim() || 'UNILORIN Student',
+        fullName: fullName.trim() || 'Campus Student',
         role: 'student',
       });
       setIsLoading(false);
@@ -189,7 +183,7 @@ export const UnilorinAuthModule: React.FC<UnilorinAuthModuleProps> = ({
         uid: `biometric_${Date.now()}`,
         email: storedEmail,
         matricNumber: matric,
-        fullName: 'Verified UNILORIN Student',
+        fullName: 'Verified Campus Student',
         faculty: 'Physical Sciences',
         department: 'Computer Science',
       });
@@ -247,10 +241,10 @@ export const UnilorinAuthModule: React.FC<UnilorinAuthModuleProps> = ({
         <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-amber-500/20 text-amber-400 font-bold text-xl border border-amber-500/30 mb-3 shadow-lg shadow-amber-500/10">
           🎓
         </div>
-        <h2 className="text-xl font-bold tracking-tight text-white">UNILORIN Mobile Access</h2>
+        <h2 className="text-xl font-bold tracking-tight text-white">Campus Foundry Mobile Access</h2>
         <p className="text-xs text-neutral-400 mt-1">
-          {step === 'EMAIL_ENTRY' && 'Institutional Student Gateway & Biometrics'}
-          {step === 'OTP_VERIFY' && '6-Digit One-Time Cryptographic Code'}
+          {step === 'EMAIL_ENTRY' && 'Student Community Gateway & Biometrics'}
+          {step === 'OTP_VERIFY' && '6-Digit One-Time Verification Code'}
           {step === 'BIOMETRICS_PROMPT' && 'Secure Device Enclave Enrollment'}
         </p>
       </div>
@@ -288,20 +282,20 @@ export const UnilorinAuthModule: React.FC<UnilorinAuthModuleProps> = ({
 
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-neutral-400 mb-1.5">
-                Student Email (@students.unilorin.edu.ng)
+                Student Email
               </label>
               <div className="relative">
                 <input
                   type="email"
                   required
-                  placeholder="21-52ha042@students.unilorin.edu.ng"
+                  placeholder="e.g. ibrahim@gmail.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="w-full bg-neutral-800 border border-neutral-700/80 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-neutral-500 focus:outline-none focus:border-amber-500 transition-colors"
                 />
               </div>
               <p className="text-[10px] text-neutral-500 mt-1">
-                Format: <span className="font-mono text-neutral-400">matric@students.unilorin.edu.ng</span>
+                Works with any email provider (Gmail, Outlook, Yahoo, etc.)
               </p>
             </div>
 

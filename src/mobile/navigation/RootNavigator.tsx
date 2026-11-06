@@ -68,10 +68,13 @@ import { useChat } from '../../context/ChatContext';
 import { useMarketplaceChat } from '../../context/MarketplaceChatContext';
 import { CURRENT_ACADEMIC_SESSION } from '../../constants/academic';
 import { StudentIDCard } from '../../components/playercard';
+import { UserProfileView } from '../../components/UserProfileView';
 
 import { StoriesViewerScreen, MobileStoryItem } from '../screens/StoriesViewerScreen';
 import { RealTimeChatScreen } from '../screens/RealTimeChatScreen';
 import { BiometricsService } from '../auth/BiometricsService';
+import GlobalSearchModal from '../../components/GlobalSearchModal';
+import PeopleDiscoveryModal from '../../components/PeopleDiscoveryModal';
 
 // Web feature views integrated directly into mobile tabs
 import { PoliticsCampaignView } from '../../components/PoliticsCampaignView';
@@ -112,6 +115,7 @@ export interface RootNavigatorProps {
   isLoadingBusinesses?: boolean;
   businessesError?: string | null;
   onRetryBusinesses?: () => void;
+  onOpenAdminPages?: () => void;
 }
 
 export const RootNavigator: React.FC<RootNavigatorProps> = ({
@@ -140,8 +144,9 @@ export const RootNavigator: React.FC<RootNavigatorProps> = ({
   isLoadingBusinesses = false,
   businessesError = null,
   onRetryBusinesses,
+  onOpenAdminPages,
 }) => {
-  const { currentUser, signOut } = useAuth();
+  const { currentUser, signOut, toggleFollowUser } = useAuth();
   const { totalItemCount, setIsCartOpen } = useCart();
   const { unreadTotalCount, pendingRequestsCount, conversations, openChatWithBusiness } = useChat();
   const { conversations: marketplaceConversations, openMarketplaceChat } = useMarketplaceChat();
@@ -162,6 +167,11 @@ export const RootNavigator: React.FC<RootNavigatorProps> = ({
   const [marketCategory, setMarketCategory] = useState<string>('All');
   const [marketCampus, setMarketCampus] = useState<string>('All');
   const [isZoneFilterSheetOpen, setIsZoneFilterSheetOpen] = useState(false);
+
+  // Global Search & People Discovery modals
+  const [isGlobalSearchOpen, setIsGlobalSearchOpen] = useState(false);
+  const [initialSearchTab, setInitialSearchTab] = useState<'people' | 'groups' | 'pages' | 'products' | 'posts'>('posts');
+  const [isPeopleDiscoveryOpen, setIsPeopleDiscoveryOpen] = useState(false);
 
   // Feed Category Filter
   const [feedCategory, setFeedCategory] = useState<string>('All Buzz');
@@ -265,7 +275,11 @@ export const RootNavigator: React.FC<RootNavigatorProps> = ({
             </div>
             <div>
               <h1 className="text-sm font-extrabold text-white tracking-tight">CampusFoundry</h1>
-              <p className="text-[10px] text-neutral-400 font-medium">University of Ilorin</p>
+              {currentUser?.university ? (
+                <p className="text-[10px] text-neutral-400 font-medium truncate max-w-[160px]">
+                  {currentUser.university}
+                </p>
+              ) : null}
             </div>
           </div>
 
@@ -296,6 +310,20 @@ export const RootNavigator: React.FC<RootNavigatorProps> = ({
               )}
             </button>
 
+            {/* Global Search Trigger */}
+            <button
+              type="button"
+              onClick={() => {
+                const defaultTab = activeTab === 'market' ? 'products' : activeTab === 'campus' ? 'groups' : 'posts';
+                setInitialSearchTab(defaultTab);
+                setIsGlobalSearchOpen(true);
+              }}
+              className="relative p-2 rounded-xl bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 text-neutral-300 hover:text-white transition-colors"
+              title="Global Search"
+            >
+              <Search className="w-4 h-4 text-amber-400" />
+            </button>
+
             {/* In-App Direct Messages Trigger */}
             <button
               type="button"
@@ -310,6 +338,19 @@ export const RootNavigator: React.FC<RootNavigatorProps> = ({
                 </span>
               )}
             </button>
+
+            {/* Admin Pages Control (Mobile Header Trigger) */}
+            {(currentUser?.isAdmin || currentUser?.staffRole === 'page_moderator' || currentUser?.staffRole === 'super_admin') && onOpenAdminPages && (
+              <button
+                type="button"
+                onClick={onOpenAdminPages}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-500/40 text-emerald-300 transition-colors shadow-sm active:scale-95"
+                title="Admin Pages Control"
+              >
+                <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                <span className="text-[11px] font-bold hidden xs:inline">Admin Pages</span>
+              </button>
+            )}
 
             {/* Profile Avatar / Sign In */}
             {currentUser ? (
@@ -473,7 +514,9 @@ export const RootNavigator: React.FC<RootNavigatorProps> = ({
               {/* Marketplace Header Banner */}
               <div className="p-3.5 bg-gradient-to-r from-amber-500/20 via-orange-500/10 to-neutral-900 border border-amber-500/30 rounded-2xl flex items-center justify-between gap-2">
                 <div className="min-w-0">
-                  <h3 className="text-xs font-extrabold text-amber-300 truncate">UNILORIN Student Marketplace</h3>
+                  <h3 className="text-xs font-extrabold text-amber-300 truncate">
+                    {currentUser?.university ? `${currentUser.university} Marketplace` : 'Campus Marketplace'}
+                  </h3>
                   <p className="text-[10px] text-neutral-300 mt-0.5 line-clamp-1">
                     Order directly from verified student traders across Sanrab, Tanke & PS.
                   </p>
@@ -706,7 +749,7 @@ export const RootNavigator: React.FC<RootNavigatorProps> = ({
                         id: 'news' as CampusSubHub,
                         icon: Newspaper,
                         label: 'Campus News',
-                        subtitle: 'Official UNILORIN memos & press',
+                        subtitle: 'Official campus memos & press',
                         color: 'text-amber-400 bg-amber-500/10 border-amber-500/20',
                       },
                       {
@@ -720,7 +763,7 @@ export const RootNavigator: React.FC<RootNavigatorProps> = ({
                         id: 'idcard' as CampusSubHub,
                         icon: ShieldCheck,
                         label: 'Digital ID Pass',
-                        subtitle: 'UNILORIN verified student badge',
+                        subtitle: 'Verified student badge',
                         color: 'text-rose-400 bg-rose-500/10 border-rose-500/20',
                       },
                     ].map((tile) => {
@@ -1001,18 +1044,18 @@ export const RootNavigator: React.FC<RootNavigatorProps> = ({
           {/* ========================================================== */}
           {/* TAB 5: 🎓 STUDENT ID & FOUNDER DASHBOARD                  */}
           {/* ========================================================== */}
+          {/* ========================================================== */}
+          {/* TAB 5: 👤 STUDENT SOCIAL PROFILE                           */}
+          {/* ========================================================== */}
           {activeTab === 'profile' && (
-            <StudentIDCard
-              currentUser={currentUser}
-              onOpenAuth={() => onOpenAuth('signin')}
-              onSignOut={() => {
-                signOut();
-                showToast('Signed out of institutional profile.');
-              }}
-              userOwnedBusinesses={userOwnedBusinesses}
+            <UserProfileView
+              user={currentUser}
+              userPosts={posts.filter((p) => p.authorId === currentUser?.id || p.authorUsername === currentUser?.username)}
+              userSnaps={snaps.filter((s) => s.authorId === currentUser?.id)}
+              userBusinesses={userOwnedBusinesses}
+              onOpenCreatePost={onOpenCreatePost}
               onOpenCreateBusiness={onOpenCreateBusiness}
               onSelectBusiness={onSelectBusiness}
-              onOpenMyStore={(biz) => setSelectedMyStore(biz)}
             />
           )}
 
@@ -1106,10 +1149,10 @@ export const RootNavigator: React.FC<RootNavigatorProps> = ({
             className="flex flex-col items-center gap-1 transition-transform active:scale-90 flex-1"
           >
             <span className={`text-lg transition-transform ${activeTab === 'profile' ? 'scale-110' : 'opacity-50'}`}>
-              🎓
+              👤
             </span>
             <span className={`text-[10px] font-bold ${activeTab === 'profile' ? 'text-amber-400' : 'text-neutral-400'}`}>
-              ID Card
+              Profile
             </span>
           </button>
 
@@ -1300,6 +1343,38 @@ export const RootNavigator: React.FC<RootNavigatorProps> = ({
             }}
           />
         )}
+
+        {/* Global Search Modal */}
+        <GlobalSearchModal
+          isOpen={isGlobalSearchOpen}
+          onClose={() => setIsGlobalSearchOpen(false)}
+          initialTab={initialSearchTab}
+          onSelectUser={(u) => {
+            // open profile or chat
+          }}
+          onSelectPage={(pageId) => {
+            // open hub page
+          }}
+          onSelectProduct={(prodId) => {
+            // open product modal
+          }}
+          onSelectPost={(postId) => {
+            // open post modal
+          }}
+        />
+
+        {/* People Discovery / See More Modal */}
+        <PeopleDiscoveryModal
+          isOpen={isPeopleDiscoveryOpen}
+          onClose={() => setIsPeopleDiscoveryOpen(false)}
+          currentUser={currentUser}
+          onSelectUser={(u) => {
+            // view profile
+          }}
+          onToggleFollow={(id) => {
+            toggleFollowUser(id);
+          }}
+        />
 
     </div>
   );

@@ -210,7 +210,7 @@ export const RealTimeChatScreen: React.FC<RealTimeChatScreenProps> = ({
               <span className="text-sm font-bold text-white leading-tight">{recipient.name}</span>
               {recipient.isVerifiedStudent && (
                 <span className="text-[10px] text-amber-400 bg-amber-500/10 px-1 py-0.2 rounded border border-amber-500/30">
-                  UNILORIN
+                  Verified
                 </span>
               )}
             </div>
@@ -222,7 +222,7 @@ export const RealTimeChatScreen: React.FC<RealTimeChatScreenProps> = ({
       </div>
 
       {/* Message Feed Canvas */}
-      <div className="flex-1 overflow-y-auto p-3 space-y-3 bg-[radial-gradient(#1e293b_1px,transparent_1px)] [background-size:16px_16px]">
+      <div className="flex-1 overflow-y-auto p-3 space-y-2 bg-neutral-950">
         {relevantMessages.map((msg: any) => {
           const isMe = msg.senderId === currentUser.id;
           const textContent = msg.body || msg.text || '';
@@ -232,15 +232,15 @@ export const RealTimeChatScreen: React.FC<RealTimeChatScreenProps> = ({
           return (
             <div
               key={msg.id}
-              className={`flex flex-col max-w-[80%] ${
+              className={`flex flex-col max-w-[85%] ${
                 isMe ? 'ml-auto items-end' : 'mr-auto items-start'
               }`}
             >
               <div
-                className={`rounded-2xl px-3.5 py-2.5 shadow-md relative text-xs leading-relaxed ${
+                className={`p-3 relative text-xs leading-relaxed ${
                   isMe
-                    ? 'bg-amber-600/90 text-white rounded-br-xs border border-amber-500/40'
-                    : 'bg-neutral-800/95 text-neutral-100 rounded-bl-xs border border-neutral-700/60'
+                    ? 'bg-orange-500 text-neutral-950 font-medium rounded-2xl rounded-tr-xs shadow-md'
+                    : 'bg-neutral-800 text-white rounded-2xl rounded-tl-xs border border-neutral-700/60 shadow-md'
                 }`}
               >
                 {voiceUrl ? (
@@ -253,7 +253,7 @@ export const RealTimeChatScreen: React.FC<RealTimeChatScreenProps> = ({
 
                 <div
                   className={`flex items-center gap-1 mt-1 text-[10px] ${
-                    isMe ? 'justify-end text-amber-200/80' : 'justify-end text-neutral-400'
+                    isMe ? 'justify-end text-neutral-950/70 font-mono' : 'justify-end text-neutral-400 font-mono'
                   }`}
                 >
                   <span>

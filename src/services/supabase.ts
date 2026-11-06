@@ -952,10 +952,15 @@ export async function deletePostsByUserInSupabase(usernameOrQuery: string): Prom
   if (!isSupabaseConfigured) return 0;
 
   try {
+    const isUuid = isValidUuid(query);
+    const filterConditions = isUuid
+      ? `author_username.ilike.%${query}%,author_name.ilike.%${query}%,author_id.eq.${query}`
+      : `author_username.ilike.%${query}%,author_name.ilike.%${query}%`;
+
     const { data, error } = await supabase
       .from('campus_posts')
       .delete()
-      .or(`author_username.ilike.%${query}%,author_name.ilike.%${query}%,author_id.ilike.%${query}%`)
+      .or(filterConditions)
       .select('id');
 
     if (error) {
@@ -1036,7 +1041,7 @@ export async function fetchStudentBusinessesFromSupabase(): Promise<StudentBusin
       tagline: row.tagline,
       description: row.description,
       category: row.category,
-      university: row.university || 'University of Ilorin',
+      university: row.university || '',
       campus: row.campus || 'Permanent Site',
       hostelLocation: row.hostel_location,
       ownerId: row.owner_id,
@@ -1743,5 +1748,1084 @@ export async function castPollVoteInSupabase(
   } catch (err: any) {
     console.error('[Supabase castPollVote Exception]:', err?.message || err);
     return { success: false, error: err?.message || 'Vote failed.' };
+  }
+}
+
+// ==========================================
+// Hub Pages, Members, Posts, Reports & Chat Services
+// ==========================================
+import {
+  HubPage,
+  HubPageType,
+  PageJoinMode,
+  PageStatus,
+  PageMember,
+  PageMemberRole,
+  PageMemberStatus,
+  PagePost,
+  PagePostKind,
+  PageReport,
+  PageMessage,
+  StaffRole,
+  AdminActionLog,
+  AppUser,
+} from '../types';
+
+// Pure Supabase Hub Pages, Members, Posts, Reports & Chat Services
+// =================================================================
+
+// Helper functions for Hub Pages (strictly loaded from Supabase)
+export async function fetchPagesFromSupabase(type?: HubPageType): Promise<HubPage[]> {
+  if (!isSupabaseConfigured) {
+    return [];
+  }
+
+  try {
+    let query = supabase
+      .from('pages')
+      .select('*')
+      .eq('status', 'approved');
+
+    if (type) query = query.eq('type', type);
+
+    const { data, error } = await query.order('created_at', { ascending: false });
+    if (error) {
+      if (isRlsOrPermissionError(error) || isTableMissingError(error)) {
+        console.warn('[fetchPagesFromSupabase permission notice]: Table "pages" permission denied or missing. Execute migration 010_grant_hubs_pages_permissions.sql in Supabase SQL editor.', error);
+        return [];
+      }
+      console.error('[fetchPagesFromSupabase error]:', error);
+      throw new Error(error.message || 'Failed to fetch pages from Supabase');
+    }
+    if (!data || data.length === 0) {
+      return [];
+    }
+
+    // Get true member/follower counts from page_members for each page
+    const pageIds = data.map((r: any) => r.id);
+    let countsMap: Record<string, { members: number; followers: number }> = {};
+    
+    if (pageIds.length > 0) {
+      try {
+        const { data: memberRows, error: memberErr } = await supabase
+          .from('page_members')
+          .select('page_id, role, status')
+          .in('page_id', pageIds)
+          .eq('status', 'active');
+
+        if (memberErr) {
+          console.error('[fetchPagesFromSupabase member count error]:', memberErr);
+        } else if (memberRows) {
+          memberRows.forEach((m: any) => {
+            if (!countsMap[m.page_id]) {
+              countsMap[m.page_id] = { members: 0, followers: 0 };
+            }
+            if (m.role === 'follower') {
+              countsMap[m.page_id].followers += 1;
+            } else {
+              countsMap[m.page_id].members += 1;
+            }
+          });
+        }
+      } catch (cntErr) {
+        console.error('[fetchPagesFromSupabase member count exception]:', cntErr);
+      }
+    }
+
+    return data.map((row: any) => ({
+      id: row.id,
+      type: row.type,
+      name: row.name,
+      slug: row.slug,
+      description: row.description || '',
+      logoUrl: row.logo_url || '',
+      coverUrl: row.cover_url || '',
+      ownerId: row.owner_id,
+      isVerified: !!row.is_verified,
+      joinMode: row.join_mode || 'open',
+      status: row.status || 'approved',
+      note: row.note || '',
+      createdAt: row.created_at,
+      membersCount: countsMap[row.id]?.members || 0,
+      followersCount: countsMap[row.id]?.followers || 0,
+    }));
+  } catch (err) {
+    console.error('[fetchPagesFromSupabase exception]:', err);
+    throw err;
+  }
+}
+
+export async function requestPageInSupabase(
+  payload: Partial<HubPage> & { name: string; type: HubPageType; ownerId: string }
+): Promise<{ success: boolean; page?: HubPage; error?: string }> {
+  if (!isSupabaseConfigured) {
+    return { success: false, error: 'Database not connected' };
+  }
+
+  const newPage: HubPage = {
+    id: payload.id || `page-${Date.now()}`,
+    type: payload.type,
+    name: payload.name,
+    slug: payload.slug || payload.name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+    description: payload.description || '',
+    logoUrl: payload.logoUrl || 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?w=200&auto=format&fit=crop&q=80',
+    coverUrl: payload.coverUrl || 'https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?w=1000&auto=format&fit=crop&q=80',
+    ownerId: payload.ownerId,
+    isVerified: false,
+    joinMode: payload.joinMode || 'open',
+    status: 'pending',
+    note: payload.note || '',
+    createdAt: new Date().toISOString(),
+  };
+
+  try {
+    const { data, error } = await supabase.from('pages').insert({
+      id: toSafeUuid(newPage.id),
+      type: newPage.type,
+      name: newPage.name,
+      slug: newPage.slug,
+      description: newPage.description,
+      logo_url: newPage.logoUrl,
+      cover_url: newPage.coverUrl,
+      owner_id: toSafeUuid(newPage.ownerId),
+      is_verified: false,
+      join_mode: newPage.joinMode,
+      status: 'pending',
+      note: newPage.note,
+      created_at: newPage.createdAt,
+    }).select().single();
+
+    if (error) {
+      console.error('[requestPageInSupabase error]:', error);
+      return { success: false, error: error.message };
+    }
+    if (data) {
+      newPage.id = data.id;
+    }
+    return { success: true, page: newPage };
+  } catch (e: any) {
+    console.error('[requestPageInSupabase exception]:', e);
+    return { success: false, error: e?.message || 'Failed to submit page request' };
+  }
+}
+
+export async function joinOrFollowPageInSupabase(
+  pageId: string,
+  userId: string,
+  targetRole: PageMemberRole,
+  joinMode: PageJoinMode
+): Promise<{ success: boolean; status: PageMemberStatus; role: PageMemberRole; error?: string }> {
+  const memberStatus: PageMemberStatus = (joinMode === 'request' && targetRole === 'member') ? 'pending' : 'active';
+
+  if (!isSupabaseConfigured) {
+    return { success: false, status: memberStatus, role: targetRole, error: 'Database not connected' };
+  }
+
+  try {
+    let safeUid = toSafeUuid(userId);
+    const { data: sessionData } = await supabase.auth.getSession();
+    if (sessionData?.session?.user?.id) safeUid = sessionData.session.user.id;
+
+    const { error } = await supabase.from('page_members').upsert({
+      page_id: toSafeUuid(pageId),
+      user_id: safeUid,
+      role: targetRole,
+      status: memberStatus,
+      is_muted: false,
+      created_at: new Date().toISOString(),
+    });
+
+    if (error) {
+      console.error('[joinOrFollowPageInSupabase error]:', error);
+      return { success: false, status: memberStatus, role: targetRole, error: error.message };
+    }
+    return { success: true, status: memberStatus, role: targetRole };
+  } catch (e: any) {
+    console.error('[joinOrFollowPageInSupabase exception]:', e);
+    return { success: false, status: memberStatus, role: targetRole, error: e?.message || 'Membership action failed' };
+  }
+}
+
+export async function leaveOrUnfollowPageInSupabase(
+  pageId: string,
+  userId: string
+): Promise<{ success: boolean; error?: string }> {
+  if (!isSupabaseConfigured) {
+    return { success: false, error: 'Database not configured' };
+  }
+
+  try {
+    let safeUid = toSafeUuid(userId);
+    const { data: sessionData } = await supabase.auth.getSession();
+    if (sessionData?.session?.user?.id) safeUid = sessionData.session.user.id;
+
+    const { error } = await supabase
+      .from('page_members')
+      .delete()
+      .eq('page_id', toSafeUuid(pageId))
+      .eq('user_id', safeUid);
+
+    if (error) {
+      console.error('[leaveOrUnfollowPageInSupabase error]:', error);
+      return { success: false, error: error.message };
+    }
+    return { success: true };
+  } catch (e: any) {
+    console.error('[leaveOrUnfollowPageInSupabase exception]:', e);
+    return { success: false, error: e?.message || 'Failed to leave page' };
+  }
+}
+
+export async function toggleMutePageNotificationsInSupabase(
+  pageId: string,
+  userId: string,
+  isMuted: boolean
+): Promise<{ success: boolean }> {
+  if (isSupabaseConfigured) {
+    try {
+      let safeUid = toSafeUuid(userId);
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (sessionData?.session?.user?.id) safeUid = sessionData.session.user.id;
+
+      await supabase
+        .from('page_members')
+        .update({ is_muted: isMuted })
+        .eq('page_id', toSafeUuid(pageId))
+        .eq('user_id', safeUid);
+    } catch (e) {
+      console.error('[toggleMutePageNotificationsInSupabase exception]:', e);
+    }
+  }
+
+  return { success: true };
+}
+
+export async function fetchPageMembersFromSupabase(pageId: string): Promise<PageMember[]> {
+  if (!isSupabaseConfigured) {
+    return [];
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('page_members')
+      .select('*')
+      .eq('page_id', toSafeUuid(pageId));
+
+    if (error) {
+      if (isRlsOrPermissionError(error) || isTableMissingError(error)) {
+        console.warn('[fetchPageMembersFromSupabase permission notice]: Table "page_members" permission denied or missing.', error);
+        return [];
+      }
+      console.error('[fetchPageMembersFromSupabase error]:', error);
+      throw new Error(error.message || 'Failed to fetch members');
+    }
+    if (!data || data.length === 0) {
+      return [];
+    }
+
+    // Collect user IDs to fetch profile details (display name & avatar)
+    const userIds = [...new Set(data.map((row: any) => row.user_id).filter(Boolean))];
+    let profileMap: Record<string, { fullName?: string; username?: string; avatarUrl?: string }> = {};
+
+    if (userIds.length > 0) {
+      try {
+        const { data: profs, error: profErr } = await supabase
+          .from('profiles')
+          .select('id, full_name, username, avatar_url')
+          .in('id', userIds);
+
+        if (profErr) {
+          console.error('[fetchPageMembersFromSupabase profiles join error]:', profErr);
+        } else if (profs) {
+          profs.forEach((p: any) => {
+            profileMap[p.id] = {
+              fullName: p.full_name,
+              username: p.username,
+              avatarUrl: p.avatar_url,
+            };
+          });
+        }
+      } catch (profErr) {
+        console.error('[fetchPageMembersFromSupabase profiles join exception]:', profErr);
+      }
+    }
+
+    return data.map((row: any) => {
+      const prof = profileMap[row.user_id];
+      return {
+        id: row.id,
+        pageId: row.page_id,
+        userId: row.user_id,
+        role: row.role,
+        status: row.status,
+        isMuted: !!row.is_muted,
+        createdAt: row.created_at,
+        userName: prof?.fullName || prof?.username || `Student ${row.user_id?.slice(0, 8)}`,
+        userUsername: prof?.username,
+        userAvatarUrl: prof?.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${row.user_id}`,
+      };
+    });
+  } catch (err) {
+    console.error('[fetchPageMembersFromSupabase exception]:', err);
+    throw err;
+  }
+}
+
+export async function fetchPagePostsFromSupabase(pageId?: string, pageNum = 1, pageSize = 20): Promise<PagePost[]> {
+  if (!isSupabaseConfigured) {
+    return [];
+  }
+
+  try {
+    let query = supabase.from('page_posts').select('*').eq('status', 'published');
+    if (pageId) query = query.eq('page_id', toSafeUuid(pageId));
+
+    const fromIndex = (pageNum - 1) * pageSize;
+    const toIndex = fromIndex + pageSize - 1;
+
+    const { data, error } = await query.order('created_at', { ascending: false }).range(fromIndex, toIndex);
+    if (error) {
+      if (isRlsOrPermissionError(error) || isTableMissingError(error)) {
+        console.warn('[fetchPagePostsFromSupabase permission notice]: Table "page_posts" permission denied or missing. Execute migration 010_grant_hubs_pages_permissions.sql in Supabase SQL editor.', error);
+        return [];
+      }
+      console.error('[fetchPagePostsFromSupabase error]:', error);
+      throw new Error(error.message || 'Failed to fetch posts');
+    }
+    if (!data || data.length === 0) {
+      return [];
+    }
+
+    return data.map((row: any) => ({
+      id: row.id,
+      pageId: row.page_id,
+      authorId: row.author_id,
+      kind: row.kind,
+      title: row.title,
+      body: row.body,
+      imageUrl: row.image_url,
+      eventDate: row.event_date,
+      eventLocation: row.event_location,
+      pollOptions: row.poll_options,
+      isBreaking: !!row.is_breaking,
+      status: row.status,
+      createdAt: row.created_at,
+    }));
+  } catch (err) {
+    console.error('[fetchPagePostsFromSupabase exception]:', err);
+    throw err;
+  }
+}
+
+export async function createPagePostInSupabase(
+  payload: Partial<PagePost> & { pageId: string; authorId: string; kind: PagePostKind; body: string }
+): Promise<{ success: boolean; post?: PagePost; error?: string }> {
+  if (!isSupabaseConfigured) {
+    return { success: false, error: 'Database not connected' };
+  }
+
+  const newPost: PagePost = {
+    id: payload.id || `ppost-${Date.now()}`,
+    pageId: payload.pageId,
+    authorId: payload.authorId,
+    kind: payload.kind,
+    title: payload.title || '',
+    body: payload.body,
+    imageUrl: payload.imageUrl || '',
+    eventDate: payload.eventDate,
+    eventLocation: payload.eventLocation,
+    pollOptions: payload.pollOptions,
+    isBreaking: !!payload.isBreaking,
+    status: 'published',
+    createdAt: new Date().toISOString(),
+    pageName: payload.pageName,
+    pageLogoUrl: payload.pageLogoUrl,
+    pageType: payload.pageType,
+    pageIsVerified: payload.pageIsVerified,
+  };
+
+  try {
+    const { data, error } = await supabase.from('page_posts').insert({
+      id: toSafeUuid(newPost.id),
+      page_id: toSafeUuid(newPost.pageId),
+      author_id: toSafeUuid(newPost.authorId),
+      kind: newPost.kind,
+      title: newPost.title,
+      body: newPost.body,
+      image_url: newPost.imageUrl,
+      event_date: newPost.eventDate,
+      event_location: newPost.eventLocation,
+      poll_options: newPost.pollOptions,
+      is_breaking: newPost.isBreaking,
+      status: 'published',
+      created_at: newPost.createdAt,
+    }).select().single();
+
+    if (error) {
+      console.error('[createPagePostInSupabase error]:', error);
+      return { success: false, error: error.message };
+    }
+    if (data) newPost.id = data.id;
+    return { success: true, post: newPost };
+  } catch (e: any) {
+    console.error('[createPagePostInSupabase exception]:', e);
+    return { success: false, error: e?.message || 'Failed to publish post' };
+  }
+}
+
+export async function deletePagePostInSupabase(postId: string): Promise<{ success: boolean; error?: string }> {
+  if (!isSupabaseConfigured) {
+    return { success: false, error: 'Database not configured' };
+  }
+
+  try {
+    const { error } = await supabase.from('page_posts').delete().eq('id', toSafeUuid(postId));
+    if (error) {
+      console.error('[deletePagePostInSupabase error]:', error);
+      return { success: false, error: error.message };
+    }
+    return { success: true };
+  } catch (e: any) {
+    console.error('[deletePagePostInSupabase exception]:', e);
+    return { success: false, error: e?.message };
+  }
+}
+
+export async function submitPageReportInSupabase(
+  payload: { pageId?: string; postId?: string; reporterId: string; reason: string }
+): Promise<{ success: boolean; error?: string }> {
+  if (!isSupabaseConfigured) {
+    return { success: false, error: 'Database not configured' };
+  }
+
+  const report: PageReport = {
+    id: `pr-${Date.now()}`,
+    pageId: payload.pageId,
+    postId: payload.postId,
+    reporterId: payload.reporterId,
+    reason: payload.reason,
+    status: 'pending',
+    createdAt: new Date().toISOString(),
+  };
+
+  try {
+    const { error } = await supabase.from('page_reports').insert({
+      id: toSafeUuid(report.id),
+      page_id: payload.pageId ? toSafeUuid(payload.pageId) : null,
+      post_id: payload.postId ? toSafeUuid(payload.postId) : null,
+      reporter_id: toSafeUuid(payload.reporterId),
+      reason: payload.reason,
+      status: 'pending',
+      created_at: report.createdAt,
+    });
+    if (error) {
+      console.error('[submitPageReportInSupabase error]:', error);
+      return { success: false, error: error.message };
+    }
+    return { success: true };
+  } catch (e: any) {
+    console.error('[submitPageReportInSupabase exception]:', e);
+    return { success: false, error: e?.message };
+  }
+}
+
+export async function fetchPendingPageRequestsFromSupabase(): Promise<HubPage[]> {
+  if (!isSupabaseConfigured) {
+    return [];
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('pages')
+      .select('*')
+      .eq('status', 'pending')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      if (isRlsOrPermissionError(error) || isTableMissingError(error)) {
+        console.warn('[fetchPendingPageRequestsFromSupabase permission notice]: Table "pages" permission denied or missing.', error);
+        return [];
+      }
+      console.error('[fetchPendingPageRequestsFromSupabase error]:', error);
+      throw new Error(error.message);
+    }
+    if (!data) return [];
+
+    return data.map((row: any) => ({
+      id: row.id,
+      type: row.type,
+      name: row.name,
+      slug: row.slug,
+      description: row.description || '',
+      logoUrl: row.logo_url || '',
+      coverUrl: row.cover_url || '',
+      ownerId: row.owner_id,
+      isVerified: !!row.is_verified,
+      joinMode: row.join_mode || 'open',
+      status: row.status,
+      note: row.note || '',
+      createdAt: row.created_at,
+    }));
+  } catch (err) {
+    console.error('[fetchPendingPageRequestsFromSupabase exception]:', err);
+    throw err;
+  }
+}
+
+export async function reviewPageRequestInSupabase(
+  pageId: string,
+  newStatus: PageStatus,
+  isVerified = false,
+  staffId?: string
+): Promise<{ success: boolean; error?: string }> {
+  if (!isSupabaseConfigured) {
+    return { success: false, error: 'Database not connected' };
+  }
+
+  try {
+    const { error } = await supabase
+      .from('pages')
+      .update({ status: newStatus, is_verified: isVerified })
+      .eq('id', toSafeUuid(pageId));
+
+    if (error) {
+      console.error('[reviewPageRequestInSupabase error]:', error);
+      return { success: false, error: error.message };
+    }
+
+    if (staffId) {
+      const act = newStatus === 'approved' ? (isVerified ? 'verify_page' : 'approve_page') : 'reject_page';
+      await logAdminActionInSupabase(staffId, act, pageId, { newStatus, isVerified });
+    }
+    return { success: true };
+  } catch (e: any) {
+    console.error('[reviewPageRequestInSupabase exception]:', e);
+    return { success: false, error: e?.message };
+  }
+}
+
+export async function fetchPageReportsFromSupabase(): Promise<PageReport[]> {
+  if (!isSupabaseConfigured) {
+    return [];
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('page_reports')
+      .select('*')
+      .eq('status', 'pending')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      if (isRlsOrPermissionError(error) || isTableMissingError(error)) {
+        console.warn('[fetchPageReportsFromSupabase permission notice]: Table "page_reports" permission denied or missing.', error);
+        return [];
+      }
+      console.error('[fetchPageReportsFromSupabase error]:', error);
+      throw new Error(error.message);
+    }
+    if (!data) return [];
+
+    return data.map((row: any) => ({
+      id: row.id,
+      pageId: row.page_id,
+      postId: row.post_id,
+      reporterId: row.reporter_id,
+      reason: row.reason,
+      status: row.status,
+      createdAt: row.created_at,
+    }));
+  } catch (err) {
+    console.error('[fetchPageReportsFromSupabase exception]:', err);
+    throw err;
+  }
+}
+
+export async function reviewPageReportInSupabase(
+  reportId: string,
+  action: 'dismiss' | 'remove_post',
+  postId?: string,
+  staffId?: string
+): Promise<{ success: boolean; error?: string }> {
+  if (action === 'remove_post' && postId) {
+    await deletePagePostInSupabase(postId);
+  }
+
+  if (isSupabaseConfigured) {
+    try {
+      const { error } = await supabase
+        .from('page_reports')
+        .update({ status: action === 'dismiss' ? 'dismissed' : 'reviewed' })
+        .eq('id', toSafeUuid(reportId));
+
+      if (error) {
+        console.error('[reviewPageReportInSupabase error]:', error);
+        return { success: false, error: error.message };
+      }
+
+      if (staffId) {
+        await logAdminActionInSupabase(staffId, action === 'dismiss' ? 'dismiss_report' : 'remove_reported_post', reportId, { postId });
+      }
+    } catch (e: any) {
+      console.error('[reviewPageReportInSupabase exception]:', e);
+      return { success: false, error: e?.message };
+    }
+  }
+
+  return { success: true };
+}
+
+export async function fetchPageMessagesFromSupabase(pageId: string): Promise<PageMessage[]> {
+  if (!isSupabaseConfigured) {
+    return [];
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('page_messages')
+      .select('*')
+      .eq('page_id', toSafeUuid(pageId))
+      .order('created_at', { ascending: true });
+
+    if (error) {
+      if (isRlsOrPermissionError(error) || isTableMissingError(error)) {
+        console.warn('[fetchPageMessagesFromSupabase permission notice]: Table "page_messages" permission denied or missing.', error);
+        return [];
+      }
+      console.error('[fetchPageMessagesFromSupabase error]:', error);
+      throw new Error(error.message);
+    }
+    if (!data) return [];
+
+    return data.map((row: any) => ({
+      id: row.id,
+      pageId: row.page_id,
+      senderId: row.sender_id,
+      senderName: row.sender_name || 'Member',
+      senderAvatar: row.sender_avatar || '',
+      text: row.text,
+      createdAt: row.created_at,
+    }));
+  } catch (err) {
+    console.error('[fetchPageMessagesFromSupabase exception]:', err);
+    throw err;
+  }
+}
+
+export async function sendPageMessageInSupabase(
+  pageId: string,
+  senderId: string,
+  senderName: string,
+  senderAvatar: string | undefined,
+  text: string
+): Promise<{ success: boolean; message?: PageMessage; error?: string }> {
+  const msg: PageMessage = {
+    id: `pmg-${Date.now()}`,
+    pageId,
+    senderId,
+    senderName,
+    senderAvatar: senderAvatar || '',
+    text,
+    createdAt: new Date().toISOString(),
+  };
+
+  if (!isSupabaseConfigured) {
+    return { success: false, error: 'Database not connected' };
+  }
+
+  try {
+    let safeUid = toSafeUuid(senderId);
+    const { data: sessionData } = await supabase.auth.getSession();
+    if (sessionData?.session?.user?.id) safeUid = sessionData.session.user.id;
+
+    const { data, error } = await supabase.from('page_messages').insert({
+      id: toSafeUuid(msg.id),
+      page_id: toSafeUuid(pageId),
+      sender_id: safeUid,
+      sender_name: senderName,
+      sender_avatar: senderAvatar || '',
+      text,
+      created_at: msg.createdAt,
+    }).select().single();
+
+    if (error) {
+      console.error('[sendPageMessageInSupabase error]:', error);
+      return { success: false, error: error.message };
+    }
+    if (data) msg.id = data.id;
+    return { success: true, message: msg };
+  } catch (e: any) {
+    console.error('[sendPageMessageInSupabase exception]:', e);
+    return { success: false, error: e?.message };
+  }
+}
+
+export async function updatePageDetailsInSupabase(
+  pageId: string,
+  updates: Partial<HubPage>
+): Promise<{ success: boolean; error?: string }> {
+  if (!isSupabaseConfigured) {
+    return { success: false, error: 'Database not connected' };
+  }
+
+  try {
+    const payload: any = {};
+    if (updates.name) payload.name = updates.name;
+    if (updates.description) payload.description = updates.description;
+    if (updates.logoUrl) payload.logo_url = updates.logoUrl;
+    if (updates.coverUrl) payload.cover_url = updates.coverUrl;
+    if (updates.joinMode) payload.join_mode = updates.joinMode;
+
+    const { error } = await supabase.from('pages').update(payload).eq('id', toSafeUuid(pageId));
+    if (error) {
+      console.error('[updatePageDetailsInSupabase error]:', error);
+      return { success: false, error: error.message };
+    }
+    return { success: true };
+  } catch (e: any) {
+    console.error('[updatePageDetailsInSupabase exception]:', e);
+    return { success: false, error: e?.message };
+  }
+}
+
+// ==========================================
+// Staff Permissions & Audit Logging Services
+// ==========================================
+let localAdminLogs: AdminActionLog[] = [];
+
+export async function logAdminActionInSupabase(
+  staffId: string,
+  action: string,
+  targetId: string,
+  details?: any
+): Promise<void> {
+  const log: AdminActionLog = {
+    id: `log-${Date.now()}`,
+    staffId,
+    action,
+    targetId,
+    details,
+    createdAt: new Date().toISOString(),
+  };
+
+  localAdminLogs.unshift(log);
+
+  if (isSupabaseConfigured) {
+    try {
+      let safeUid = toSafeUuid(staffId);
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (sessionData?.session?.user?.id) safeUid = sessionData.session.user.id;
+
+      await supabase.from('admin_actions').insert({
+        staff_id: safeUid,
+        action,
+        target_id: targetId,
+        details: details ? details : null,
+        created_at: log.createdAt,
+      });
+    } catch (e) {
+      console.warn('[logAdminActionInSupabase error]:', e);
+    }
+  }
+}
+
+export async function fetchAdminActionLogsFromSupabase(): Promise<AdminActionLog[]> {
+  if (!isSupabaseConfigured) {
+    return localAdminLogs;
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('admin_actions')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(100);
+
+    if (error || !data) return localAdminLogs;
+
+    // Fetch staff profile info
+    const staffIds = Array.from(new Set(data.map((d) => d.staff_id)));
+    const { data: profiles } = await supabase
+      .from('profiles')
+      .select('id, full_name, email')
+      .in('id', staffIds);
+
+    const staffMap = new Map<string, any>();
+    if (profiles) {
+      profiles.forEach((p) => staffMap.set(p.id, p));
+    }
+
+    return data.map((row: any) => {
+      const p = staffMap.get(row.staff_id);
+      return {
+        id: row.id,
+        staffId: row.staff_id,
+        action: row.action,
+        targetId: row.target_id,
+        details: row.details,
+        createdAt: row.created_at,
+        staffName: p?.full_name || 'Staff Member',
+        staffEmail: p?.email,
+      };
+    });
+  } catch (err) {
+    return localAdminLogs;
+  }
+}
+
+export async function searchUsersForStaffManagementInSupabase(query: string): Promise<AppUser[]> {
+  if (!isSupabaseConfigured) {
+    return [];
+  }
+
+  try {
+    if (!query.trim()) return [];
+    const q = `%${query.trim().toLowerCase()}%`;
+
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('id, email, full_name, username, role, level, department, faculty, staff_role, is_verified, is_admin, avatar_url')
+      .or(`username.ilike.${q},full_name.ilike.${q},email.ilike.${q}`)
+      .limit(20);
+
+    if (error || !data) return [];
+
+    return data.map((row: any) => ({
+      id: row.id,
+      email: row.email || '',
+      fullName: row.full_name || 'Student',
+      username: row.username || '',
+      role: row.role || 'student',
+      level: row.level || '300L',
+      department: row.department,
+      faculty: row.faculty,
+      isVerified: !!row.is_verified,
+      isAdmin: !!row.is_admin || !!row.staff_role,
+      staffRole: row.staff_role || (row.is_admin ? 'super_admin' : null),
+      avatarUrl: row.avatar_url,
+    }));
+  } catch (err) {
+    return [];
+  }
+}
+
+export async function assignStaffRoleInSupabase(
+  staffId: string,
+  targetUserId: string,
+  newStaffRole: StaffRole
+): Promise<{ success: boolean; error?: string }> {
+  if (!isSupabaseConfigured) {
+    return { success: true };
+  }
+
+  try {
+    const { error } = await supabase
+      .from('profiles')
+      .update({
+        staff_role: newStaffRole,
+        is_admin: newStaffRole === 'super_admin' ? true : false,
+      })
+      .eq('id', targetUserId);
+
+    if (error) {
+      return { success: false, error: error.message };
+    }
+
+    // Log staff role change action
+    await logAdminActionInSupabase(
+      staffId,
+      newStaffRole ? 'assign_staff_role' : 'remove_staff_role',
+      targetUserId,
+      { assigned_role: newStaffRole }
+    );
+
+    return { success: true };
+  } catch (e: any) {
+    return { success: false, error: e?.message || 'Role update failed.' };
+  }
+}
+
+
+// ==============================================================
+// 1. GLOBAL SEARCH SUPABASE HELPERS
+// ==============================================================
+export async function executeGlobalSearchInSupabase(
+  query: string,
+  tab: 'people' | 'groups' | 'pages' | 'products' | 'posts',
+  page = 1,
+  pageSize = 15
+): Promise<{ items: any[]; hasMore: boolean }> {
+  if (!isSupabaseConfigured || !query.trim()) return { items: [], hasMore: false };
+  const q = `%${query.trim().toLowerCase()}%`;
+  const from = (page - 1) * pageSize;
+  const to = from + pageSize;
+
+  try {
+    if (tab === 'people') {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, full_name, username, avatar_url, faculty, department, level, is_verified, bio, followers_count')
+        .or(`full_name.ilike.${q},username.ilike.${q}`)
+        .range(from, to);
+      if (error || !data) return { items: [], hasMore: false };
+      return {
+        items: data.map((d) => ({ ...d, type: 'person' })),
+        hasMore: data.length > pageSize,
+      };
+    } else if (tab === 'groups' || tab === 'pages') {
+      const pageType = tab === 'groups' ? 'club' : 'news';
+      const { data, error } = await supabase
+        .from('pages')
+        .select('id, type, name, slug, description, logo_url, cover_url, is_verified, join_mode, status')
+        .eq('status', 'approved')
+        .eq('type', pageType)
+        .or(`name.ilike.${q},description.ilike.${q}`)
+        .range(from, to);
+      if (error || !data) return { items: [], hasMore: false };
+      return {
+        items: data.map((d) => ({ ...d, type: 'page' })),
+        hasMore: data.length > pageSize,
+      };
+    } else if (tab === 'products') {
+      const { data, error } = await supabase
+        .from('products')
+        .select('id, title, description, price, images, category, stock_quantity, is_active')
+        .eq('is_active', true)
+        .or(`title.ilike.${q},description.ilike.${q}`)
+        .range(from, to);
+      if (error || !data) return { items: [], hasMore: false };
+      return {
+        items: data.map((d) => ({ ...d, type: 'product' })),
+        hasMore: data.length > pageSize,
+      };
+    } else if (tab === 'posts') {
+      const { data, error } = await supabase
+        .from('campus_posts')
+        .select('*')
+        .or(`content.ilike.${q}`)
+        .order('created_at', { ascending: false })
+        .range(from, to);
+      if (error || !data) return { items: [], hasMore: false };
+      return {
+        items: data.map((d) => ({
+          id: d.id,
+          authorId: d.author_id,
+          authorName: d.author_name || 'Campus Scholar',
+          authorAvatar: d.author_avatar,
+          authorDept: d.author_dept,
+          authorLevel: d.author_level || '300L',
+          authorRole: d.author_role || 'student',
+          content: d.content,
+          category: d.category || 'Academics & GNS',
+          mediaUrl: d.media_url,
+          mediaType: d.media_type,
+          likesCount: d.likes_count || 0,
+          commentsCount: d.comments_count || 0,
+          createdAt: d.created_at,
+          type: 'post',
+        })),
+        hasMore: data.length > pageSize,
+      };
+    }
+  } catch (e) {
+    console.warn('[executeGlobalSearchInSupabase error]:', e);
+  }
+  return { items: [], hasMore: false };
+}
+
+// ==============================================================
+// 2. BALANCED PEOPLE DISCOVERY SUPABASE HELPER (RPC)
+// ==============================================================
+export async function fetchBalancedPeopleSuggestionsFromSupabase(
+  userId: string,
+  limit = 20
+): Promise<Array<{ id: string; fullName: string; username: string; avatarUrl?: string; faculty?: string; department?: string; level?: string; hostelLocation?: string; isVerified?: boolean; bio?: string; suggestionReason: string }>> {
+  if (!isSupabaseConfigured || !userId) return [];
+
+  try {
+    const { data, error } = await supabase.rpc('get_balanced_people_suggestions', {
+      p_user_id: userId,
+      p_limit: limit,
+    });
+
+    if (error || !data) {
+      console.warn('[fetchBalancedPeopleSuggestionsFromSupabase rpc fallback]:', error?.message);
+      const { data: fallbackData } = await supabase
+        .from('profiles')
+        .select('id, full_name, username, avatar_url, faculty, department, level, hostel_location, is_verified, bio')
+        .neq('id', userId)
+        .limit(limit);
+      if (!fallbackData) return [];
+      return fallbackData.map((d: any) => ({
+        id: d.id,
+        fullName: d.full_name || 'Campus Student',
+        username: d.username || d.email?.split('@')[0],
+        avatarUrl: d.avatar_url,
+        faculty: d.faculty,
+        department: d.department,
+        level: d.level,
+        hostelLocation: d.hostel_location,
+        isVerified: !!d.is_verified,
+        bio: d.bio,
+        suggestionReason: 'Discover',
+      }));
+    }
+
+    return data.map((d: any) => ({
+      id: d.id,
+      fullName: d.full_name || 'Campus Student',
+      username: d.username || '',
+      avatarUrl: d.avatar_url,
+      faculty: d.faculty,
+      department: d.department,
+      level: d.level,
+      hostelLocation: d.hostel_location,
+      isVerified: !!d.is_verified,
+      bio: d.bio,
+      suggestionReason: d.suggestion_reason || 'Discover',
+    }));
+  } catch (e) {
+    console.warn('[fetchBalancedPeopleSuggestionsFromSupabase exception]:', e);
+    return [];
+  }
+}
+
+// ==============================================================
+// 3. DELETE SNAP SUPABASE HELPER & STORAGE REMOVAL
+// ==============================================================
+export async function deleteSnapFromSupabase(snapId: string, mediaUrl?: string): Promise<{ success: boolean; error?: string }> {
+  if (!isSupabaseConfigured) return { success: true };
+
+  try {
+    const { error: dbError } = await supabase
+      .from('campus_snaps')
+      .delete()
+      .eq('id', snapId);
+
+    if (dbError) {
+      return { success: false, error: dbError.message };
+    }
+
+    if (mediaUrl && mediaUrl.includes('supabase.co/storage')) {
+      try {
+        const urlObj = new URL(mediaUrl);
+        const pathParts = urlObj.pathname.split('/storage/v1/object/public/');
+        if (pathParts.length > 1) {
+          const fullPath = pathParts[1];
+          const firstSlash = fullPath.indexOf('/');
+          if (firstSlash !== -1) {
+            const bucketName = fullPath.substring(0, firstSlash);
+            const filePath = fullPath.substring(firstSlash + 1);
+            await supabase.storage.from(bucketName).remove([filePath]);
+          }
+        }
+      } catch (storageErr) {
+        console.warn('[deleteSnapFromSupabase storage cleanup notice]:', storageErr);
+      }
+    }
+
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Failed to delete snap.' };
   }
 }

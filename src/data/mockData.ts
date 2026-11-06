@@ -11,7 +11,7 @@ export const CATEGORIES = [
 ] as const;
 
 export const CAMPUS_ZONES = [
-  { id: 'All', label: 'All UNILORIN Zones' },
+  { id: 'All', label: 'All Campus Zones' },
   { id: 'Permanent Site', label: 'Permanent Site (PS Hostels)' },
   { id: 'Tanke Off-Campus', label: 'Tanke Off-Campus' },
   { id: 'Mini Campus', label: 'Mini Campus' },
@@ -78,13 +78,13 @@ export const UNILORIN_HOSTEL_GROUPS: HostelOptionGroup[] = [
       'Easy and Quiet Hostel',
       'Moremi Hostel',
       'Kam Abioye Hostel',
-      'UNILORIN Scientific Multipurpose Cooperative Hostel',
-      'UNILORIN Probitas Multipurpose Cooperative Hostel',
+      'Scientific Multipurpose Cooperative Hostel',
+      'Probitas Multipurpose Cooperative Hostel',
       'Habibah Abake Hostel',
       'Edge Hostel',
       'Michael Hostel',
       'Primrose Hostel',
-      'Unilorin Probitas Doctrina Hostel',
+      'Probitas Doctrina Hostel',
     ],
   },
   {
@@ -153,13 +153,13 @@ export const ALL_UNILORIN_HOSTELS_META: HostelInfo[] = [
   { name: 'Easy and Quiet Hostel', campus: 'main', category: 'private', gender: 'female', groupName: 'On-Campus Private Hostels (Female)' },
   { name: 'Moremi Hostel', campus: 'main', category: 'private', gender: 'female', groupName: 'On-Campus Private Hostels (Female)' },
   { name: 'Kam Abioye Hostel', campus: 'main', category: 'private', gender: 'female', groupName: 'On-Campus Private Hostels (Female)' },
-  { name: 'UNILORIN Scientific Multipurpose Cooperative Hostel', campus: 'main', category: 'private', gender: 'female', groupName: 'On-Campus Private Hostels (Female)' },
-  { name: 'UNILORIN Probitas Multipurpose Cooperative Hostel', campus: 'main', category: 'private', gender: 'female', groupName: 'On-Campus Private Hostels (Female)' },
+  { name: 'Scientific Multipurpose Cooperative Hostel', campus: 'main', category: 'private', gender: 'female', groupName: 'On-Campus Private Hostels (Female)' },
+  { name: 'Probitas Multipurpose Cooperative Hostel', campus: 'main', category: 'private', gender: 'female', groupName: 'On-Campus Private Hostels (Female)' },
   { name: 'Habibah Abake Hostel', campus: 'main', category: 'private', gender: 'female', groupName: 'On-Campus Private Hostels (Female)' },
   { name: 'Edge Hostel', campus: 'main', category: 'private', gender: 'female', groupName: 'On-Campus Private Hostels (Female)' },
   { name: 'Michael Hostel', campus: 'main', category: 'private', gender: 'female', groupName: 'On-Campus Private Hostels (Female)' },
   { name: 'Primrose Hostel', campus: 'main', category: 'private', gender: 'female', groupName: 'On-Campus Private Hostels (Female)' },
-  { name: 'Unilorin Probitas Doctrina Hostel', campus: 'main', category: 'private', gender: 'female', groupName: 'On-Campus Private Hostels (Female)' },
+  { name: 'Probitas Doctrina Hostel', campus: 'main', category: 'private', gender: 'female', groupName: 'On-Campus Private Hostels (Female)' },
 
   // Tanke & Off-Campus Student Hubs
   { name: 'Tanke - University Road (Tipper Garage)', campus: 'offcampus', category: 'offcampus', gender: 'any', groupName: 'Tanke & Off-Campus Student Hubs' },
@@ -493,7 +493,7 @@ export const TRADER_BLUEPRINTS: BusinessBlueprint[] = [
     difficulty: 'Intermediate',
     summary: 'Source quality wholesale smartphone screens, fast chargers, and OTG adapters, offering 30-minute express repairs near student lecture halls.',
     steps: [
-      'Build a relationship with wholesale parts vendors in Lagos or Post Office Ilorin.',
+      'Build a relationship with wholesale parts vendors in Lagos or local electronics markets.',
       'Always test new displays in front of the customer before sealing the phone.',
       'Provide a clear 30-day written guarantee to build lasting campus trust.',
       'Stock universal items: 20W iPhone fast chargers, Type-C cables, and tempered screen guards.',

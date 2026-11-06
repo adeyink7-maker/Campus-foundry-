@@ -89,7 +89,7 @@ export const CreatePostModal = ({
           </div>
           <h3 className="text-base font-bold text-white">Sign In to Post on Feed</h3>
           <p className="text-xs text-neutral-400 leading-relaxed">
-            Please log in with your UNILORIN student profile to publish updates, GNS inquiries, and campus news.
+            Please log in with your campus student profile to publish updates, inquiries, and news.
           </p>
           <button
             type="button"

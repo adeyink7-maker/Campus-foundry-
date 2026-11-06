@@ -13,7 +13,11 @@ import {
   UserCheck, 
   Trash2, 
   X, 
-  MoreHorizontal
+  MoreHorizontal,
+  CheckCircle2,
+  Zap,
+  ShieldCheck,
+  Flag
 } from 'lucide-react';
 import { CampusPost, StudentBusiness, PostReactionCounts } from '../types';
 import { useAuth } from '../context/AuthContext';
@@ -148,84 +152,129 @@ export const PostCard: React.FC<PostCardProps> = ({
   };
 
   return (
-    <article className="rounded-3xl border border-neutral-800 bg-neutral-900/90 p-5 sm:p-6 backdrop-blur-xl shadow-xl transition-all hover:border-neutral-700/80 space-y-4">
+    <article className={`rounded-3xl border bg-neutral-900/90 p-5 sm:p-6 backdrop-blur-xl shadow-xl transition-all space-y-4 ${
+      post.isBreaking
+        ? 'border-red-500/50 bg-red-950/20 shadow-red-950/30'
+        : 'border-neutral-800 hover:border-neutral-700/80'
+    }`}>
+      {post.isBreaking && (
+        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-red-600 text-white text-[10px] font-mono font-bold uppercase tracking-wider animate-pulse">
+          <Zap className="w-3.5 h-3.5" />
+          <span>BREAKING NEWS</span>
+        </div>
+      )}
       
-      {/* Top Author Metadata & Academic Identity */}
+      {/* Top Author Metadata & Academic Identity or Page Identity */}
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-3">
-          
-          <LongPressAvatar
-            user={{
-              id: post.authorId,
-              fullName: post.authorName,
-              username: post.authorUsername || `@${post.authorName.toLowerCase().replace(/\s+/g, '_')}`,
-              avatarUrl: post.authorAvatar,
-              department: post.authorDept,
-              level: post.authorLevel,
-              faculty: post.authorFaculty,
-              isVerified: post.isVerifiedStudent,
-            }}
-            size="md"
-            onClick={() => onOpenAuthorProfile?.(post.authorId)}
-          />
-
-          <div className="min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span 
+          {post.pageName ? (
+            <div className="flex items-center gap-3">
+              <img
+                src={post.pageLogoUrl || 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?w=100&auto=format&fit=crop&q=80'}
+                alt={post.pageName}
+                className="w-10 h-10 rounded-xl object-cover border border-neutral-800 shrink-0"
+              />
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs sm:text-sm font-bold text-white inline-flex items-center gap-1">
+                    <span>{post.pageName}</span>
+                    {post.pageIsVerified && (
+                      <span title="Verified Page">
+                        <ShieldCheck className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                      </span>
+                    )}
+                  </span>
+                  <span className={`rounded-md px-2 py-0.5 text-xs font-mono font-bold border ${
+                    post.pageType === 'news'
+                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                      : 'bg-purple-500/20 text-purple-300 border-purple-500/30'
+                  }`}>
+                    {post.pageType === 'news' ? 'News' : 'Club'}
+                  </span>
+                </div>
+                <span className="text-[10px] text-neutral-400 font-mono">Official Page Broadcast • {new Date(post.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center gap-3">
+              <LongPressAvatar
+                user={{
+                  id: post.authorId,
+                  fullName: post.authorName,
+                  username: post.authorUsername || `@${post.authorName.toLowerCase().replace(/\s+/g, '_')}`,
+                  avatarUrl: post.authorAvatar,
+                  department: post.authorDept,
+                  level: post.authorLevel,
+                  faculty: post.authorFaculty,
+                  isVerified: post.isVerifiedStudent,
+                }}
+                size="md"
                 onClick={() => onOpenAuthorProfile?.(post.authorId)}
-                className="text-xs sm:text-sm font-bold text-white hover:text-orange-400 cursor-pointer transition-colors"
-              >
-                {post.authorName}
-              </span>
+              />
 
-              <span className="rounded-md bg-neutral-800 px-2 py-0.5 text-xs font-mono text-neutral-300 border border-neutral-700">
-                {post.authorLevel}
-              </span>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span 
+                    onClick={() => onOpenAuthorProfile?.(post.authorId)}
+                    className="text-xs sm:text-sm font-bold text-white hover:text-orange-400 cursor-pointer transition-colors inline-flex items-center gap-1"
+                  >
+                    <span>{post.authorName}</span>
+                    {(post.isVerifiedStudent || (post as any).isVerified) && (
+                      <span title="Verified Student">
+                        <CheckCircle2 className="h-3.5 w-3.5 text-sky-400 fill-sky-400/20 shrink-0" />
+                      </span>
+                    )}
+                  </span>
 
-              {post.authorRole === 'trader' && (
-                <span className="rounded-md bg-orange-500/20 text-orange-300 border border-orange-500/30 px-2 py-0.5 text-xs font-mono font-bold">
-                  Trader
-                </span>
-              )}
+                  <span className="rounded-md bg-neutral-800 px-2 py-0.5 text-xs font-mono text-neutral-300 border border-neutral-700">
+                    {post.authorLevel}
+                  </span>
 
-              {/* Follow Button - min 44px touch target */}
-              {!isMyPost && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!currentUser) {
-                      onRequireAuth?.(() => toggleFollowUser(post.authorId));
-                      return;
-                    }
-                    toggleFollowUser(post.authorId);
-                  }}
-                  className={`min-h-[44px] min-w-[44px] flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-full transition-all cursor-pointer ${
-                    isFollowingAuthor
-                      ? 'bg-neutral-800 text-neutral-300 hover:text-red-400 border border-neutral-700'
-                      : 'border border-orange-500/40 bg-orange-500/10 text-orange-400 hover:bg-orange-500/20'
-                  }`}
-                >
-                  {isFollowingAuthor ? (
-                    <>
-                      <UserCheck className="h-4 w-4 text-emerald-400" />
-                      <span>Following</span>
-                    </>
-                  ) : (
-                    <>
-                      <UserPlus className="h-4 w-4" />
-                      <span>Follow</span>
-                    </>
+                  {post.authorRole === 'trader' && (
+                    <span className="rounded-md bg-orange-500/20 text-orange-300 border border-orange-500/30 px-2 py-0.5 text-xs font-mono font-bold">
+                      Trader
+                    </span>
                   )}
-                </button>
-              )}
-            </div>
 
-            <div className="flex items-center gap-2 text-xs text-neutral-300 truncate mt-1">
-              <span>{post.authorDept || 'UNILORIN Student'}</span>
-              <span>•</span>
-              <time>{new Date(post.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</time>
+                  {!isMyPost && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!currentUser) {
+                          onRequireAuth?.(() => toggleFollowUser(post.authorId));
+                          return;
+                        }
+                        toggleFollowUser(post.authorId);
+                      }}
+                      className={`min-h-[44px] min-w-[44px] flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-full transition-all cursor-pointer ${
+                        isFollowingAuthor
+                          ? 'bg-neutral-800 text-neutral-300 hover:text-red-400 border border-neutral-700'
+                          : 'border border-orange-500/40 bg-orange-500/10 text-orange-400 hover:bg-orange-500/20'
+                      }`}
+                    >
+                      {isFollowingAuthor ? (
+                        <>
+                          <UserCheck className="h-4 w-4 text-emerald-400" />
+                          <span>Following</span>
+                        </>
+                      ) : (
+                        <>
+                          <UserPlus className="h-4 w-4" />
+                          <span>Follow</span>
+                        </>
+                      )}
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2 text-xs text-neutral-300 truncate mt-1">
+                  <span>{post.authorDept || 'UNILORIN Student'}</span>
+                  <span>•</span>
+                  <time>{new Date(post.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</time>
+                </div>
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
         {/* Category & Location Badge */}

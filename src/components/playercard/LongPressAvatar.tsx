@@ -59,18 +59,18 @@ export const LongPressAvatar: React.FC<LongPressAvatarProps> = ({
   const hasTriggeredRef = useRef(false);
 
   const effectiveId = user?.id || userId || 'usr_unknown';
-  const effectiveName = user?.fullName || name || 'UNILORIN Student';
+  const effectiveName = user?.fullName || name || 'Campus Student';
   const effectiveAvatar = user?.avatarUrl || avatarUrl;
 
   const normalizedUser: AppUser = {
     id: effectiveId,
-    email: user?.email || `${user?.username || 'student'}@students.unilorin.edu.ng`,
+    email: user?.email || `${user?.username || 'student'}@campus.edu`,
     fullName: effectiveName,
     username: user?.username || `@${effectiveName.toLowerCase().replace(/\s+/g, '_')}`,
     role: user?.role || 'student',
     accountType: user?.accountType || 'BUYER',
     avatarUrl: effectiveAvatar,
-    university: user?.university || 'University of Ilorin (UNILORIN)',
+    university: user?.university || user?.campus || 'Campus University',
     faculty: user?.faculty || 'Communication & Information Sciences',
     department: user?.department || 'Computer Science',
     level: user?.level || '300L',
@@ -268,7 +268,7 @@ export const LongPressAvatar: React.FC<LongPressAvatarProps> = ({
       {showVerifiedBadge && normalizedUser.isVerified && (
         <div
           className="absolute -bottom-1 -right-1 z-10 flex h-4 w-4 items-center justify-center rounded-full bg-emerald-500 text-neutral-950 shadow-md ring-2 ring-neutral-950"
-          title="Verified UNILORIN Student"
+          title="Verified Student"
         >
           <ShieldCheck className="h-2.5 w-2.5" />
         </div>

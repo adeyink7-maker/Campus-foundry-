@@ -4,8 +4,14 @@ import { AppUser, UserRole, AccountType, TraderProfile, StudentBusiness, Student
 import { 
   requestStudentEmailOTP, 
   verifyStudentEmailOTP, 
+  signUpWithEmailPassword,
+  signInWithEmailPassword,
+  resendConfirmationEmail,
+  verifySignupOtp,
   SendOtpResult, 
-  VerifyOtpParams 
+  VerifyOtpParams,
+  SignUpParams,
+  SignInParams
 } from '../services/unilorinAuth';
 
 export interface TraderElevationData {
@@ -22,6 +28,10 @@ export interface TraderElevationData {
 interface AuthContextType {
   currentUser: AppUser | null;
   isLoading: boolean;
+  signUpWithEmailPassword: (params: SignUpParams) => Promise<{ user?: AppUser; requiresEmailConfirmation: boolean; message: string }>;
+  signInWithEmailPassword: (params: SignInParams) => Promise<{ user: AppUser }>;
+  resendConfirmationEmail: (email: string) => Promise<{ success: boolean; message: string }>;
+  confirmSignupWithOtp: (email: string, token: string) => Promise<AppUser>;
   requestUnilorinOTP: (email: string) => Promise<SendOtpResult>;
   verifyUnilorinOTP: (params: VerifyOtpParams) => Promise<{ user: AppUser; needsOnboarding?: boolean }>;
   signOut: () => Promise<void>;
@@ -124,18 +134,22 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         const mappedUser: AppUser = {
           id: profile.id,
           email: profile.email || userEmail,
-          fullName: profile.full_name || 'UNILORIN Student',
+          fullName: profile.full_name || 'Campus Student',
           username: profile.username || (profile.email || userEmail)?.split('@')[0],
           matricNumber: profile.matric_number || (profile.email || userEmail)?.split('@')[0],
           role: (profile.role as UserRole) || 'student',
           accountType: (profile.account_type as AccountType) || 'BUYER',
-          university: profile.university || 'University of Ilorin (UNILORIN)',
+          university: profile.university || '',
+          session: profile.session || '',
           faculty: profile.faculty,
           department: profile.department,
           level: (profile.level as StudentLevel) || '300L',
           hostelLocation: profile.hostel_location,
           whatsapp: profile.whatsapp,
           isVerified: Boolean(profile.is_verified),
+          isAdmin: Boolean(profile.is_admin || profile.role === 'admin' || profile.staff_role),
+          staffRole: (profile.staff_role as any) || (profile.role === 'admin' || profile.is_admin ? 'super_admin' : null),
+          verifiedAt: profile.verified_at,
           avatarUrl: profile.avatar_url,
           bio: profile.bio,
           postsCount: profile.posts_count || 0,
@@ -152,14 +166,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         const defaultUser: AppUser = {
           id: session.user.id,
           email: session.user.email || '',
-          fullName: session.user.user_metadata?.full_name || 'UNILORIN Student',
+          fullName: session.user.user_metadata?.full_name || 'Campus Student',
           username: session.user.email?.split('@')[0],
           matricNumber: session.user.email?.split('@')[0],
-          role: 'student',
-          accountType: 'BUYER',
-          university: 'University of Ilorin (UNILORIN)',
-          level: '300L',
-          isVerified: true,
+          role: session.user.user_metadata?.role || 'student',
+          accountType: session.user.user_metadata?.role === 'trader' ? 'TRADER' : 'BUYER',
+          university: session.user.user_metadata?.university || '',
+          faculty: session.user.user_metadata?.faculty,
+          department: session.user.user_metadata?.department,
+          level: session.user.user_metadata?.level || '300L',
+          isVerified: false,
+          isAdmin: false,
           joinedAt: session.user.created_at || new Date().toISOString(),
         };
         setCurrentUser(defaultUser);
@@ -169,6 +186,49 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       console.warn('[Supabase] Profile sync warning:', e);
     }
     return null;
+  };
+
+  const handleSignUpWithEmailPassword = async (params: SignUpParams) => {
+    const res = await signUpWithEmailPassword(params);
+    if (res.user && !res.requiresEmailConfirmation) {
+      setCurrentUser(res.user);
+    }
+    return res;
+  };
+
+  const handleSignInWithEmailPassword = async (params: SignInParams) => {
+    const res = await signInWithEmailPassword(params);
+    setCurrentUser(res.user);
+    return res;
+  };
+
+  const handleResendConfirmationEmail = async (email: string) => {
+    return await resendConfirmationEmail(email);
+  };
+
+  const handleConfirmSignupWithOtp = async (email: string, token: string): Promise<AppUser> => {
+    const { user } = await verifySignupOtp({ email, token });
+    const profile = await syncUserProfileFromSupabase(user.id);
+    if (profile) {
+      setCurrentUser(profile);
+      return profile;
+    }
+    const defaultUser: AppUser = {
+      id: user.id,
+      email: user.email || email,
+      fullName: user.user_metadata?.full_name || 'Campus Student',
+      username: (user.email || email).split('@')[0],
+      role: user.user_metadata?.role || 'student',
+      accountType: user.user_metadata?.role === 'trader' ? 'TRADER' : 'BUYER',
+      level: user.user_metadata?.level || '300L',
+      faculty: user.user_metadata?.faculty,
+      department: user.user_metadata?.department,
+      isVerified: false,
+      isAdmin: false,
+      joinedAt: user.created_at || new Date().toISOString(),
+    };
+    setCurrentUser(defaultUser);
+    return defaultUser;
   };
 
   const requestUnilorinOTP = async (email: string): Promise<SendOtpResult> => {
@@ -205,16 +265,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const newBusiness: StudentBusiness = {
       id: businessId,
       name: traderData.brandName.trim(),
-      tagline: traderData.description || 'Verified student venture serving the UNILORIN community.',
+      tagline: traderData.description || 'Verified student venture.',
       description: traderData.description || `${traderData.brandName} is a student-owned venture offering ${traderData.businessCategory} at ${traderData.campusLocation}.`,
       category: traderData.businessCategory,
-      university: 'University of Ilorin (UNILORIN)',
+      university: currentUser.university || '',
       campus: 'Permanent Site',
       hostelLocation: traderData.campusLocation,
       ownerId: currentUser.id,
       ownerName: currentUser.fullName,
       ownerEmail: currentUser.email,
-      studentFaculty: currentUser.faculty || 'UNILORIN',
+      studentFaculty: currentUser.faculty || '',
       studentDept: currentUser.department || 'Undergraduate',
       studentLevel: currentUser.level || '300L',
       whatsapp: traderData.whatsappContact,
@@ -261,7 +321,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           tagline: newBusiness.tagline,
           description: newBusiness.description,
           category: newBusiness.category,
-          university: 'University of Ilorin (UNILORIN)',
+          university: currentUser.university || '',
           campus: newBusiness.campus,
           hostel_location: newBusiness.hostelLocation,
           owner_name: newBusiness.ownerName,
@@ -346,6 +406,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     if (isSupabaseConfigured) {
       const payload: Record<string, any> = { updated_at: new Date().toISOString() };
+      if (updatedData.university !== undefined) payload.university = updatedData.university;
+      if (updatedData.session !== undefined) payload.session = updatedData.session;
       if (updatedData.fullName !== undefined) payload.full_name = updatedData.fullName;
       if (updatedData.level !== undefined) payload.level = updatedData.level;
       if (updatedData.faculty !== undefined) payload.faculty = updatedData.faculty;
@@ -368,6 +430,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       value={{
         currentUser,
         isLoading,
+        signUpWithEmailPassword: handleSignUpWithEmailPassword,
+        signInWithEmailPassword: handleSignInWithEmailPassword,
+        resendConfirmationEmail: handleResendConfirmationEmail,
+        confirmSignupWithOtp: handleConfirmSignupWithOtp,
         requestUnilorinOTP,
         verifyUnilorinOTP,
         signOut,

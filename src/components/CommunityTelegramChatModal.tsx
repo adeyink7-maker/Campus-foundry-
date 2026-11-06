@@ -276,9 +276,7 @@ export const CommunityTelegramChatModal: React.FC<CommunityTelegramChatModalProp
                 </span>
               </div>
               <div className="flex items-center gap-2 text-[11px] text-neutral-400 font-mono">
-                <span>{(club.memberCount || 14250).toLocaleString()} members</span>
-                <span>•</span>
-                <span className="text-emerald-400 font-semibold">1,820 online</span>
+                <span>{(club.memberCount || 0).toLocaleString()} members</span>
                 {isChatLocked && (
                   <>
                     <span>•</span>

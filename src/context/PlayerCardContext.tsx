@@ -30,7 +30,7 @@ export const PlayerCardProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     if (typeof userOrId === 'string') {
       const fallbackUser: AppUser = {
         id: userOrId,
-        fullName: 'UNILORIN Student',
+        fullName: 'Campus Student',
         email: `${userOrId}@students.unilorin.edu.ng`,
         role: 'student',
         accountType: 'BUYER',
