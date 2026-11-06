@@ -11,7 +11,8 @@
  * - 📱 Device Frame Toggle (Phone Frame vs Edge-to-Edge Fullscreen vs Web view)
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { fetchUserProfileByIdFromSupabase } from '../../services/supabase';
 import { 
   Sparkles, 
   Plus, 
@@ -50,7 +51,9 @@ import {
   ArrowRight,
   TrendingUp,
   Award,
-  AlertCircle
+  AlertCircle,
+  Home,
+  Building2
 } from 'lucide-react';
 
 import { 
@@ -112,6 +115,8 @@ export interface RootNavigatorProps {
   showToast?: (msg: string) => void;
   onSwitchToWeb?: () => void;
   onViewUserProfile?: (authorId?: string, authorDetails?: any) => void;
+  targetProfileUser?: AppUser | null;
+  onClearTargetUser?: () => void;
   isLoadingBusinesses?: boolean;
   businessesError?: string | null;
   onRetryBusinesses?: () => void;
@@ -141,6 +146,8 @@ export const RootNavigator: React.FC<RootNavigatorProps> = ({
   showToast = () => {},
   onSwitchToWeb,
   onViewUserProfile,
+  targetProfileUser = null,
+  onClearTargetUser,
   isLoadingBusinesses = false,
   businessesError = null,
   onRetryBusinesses,
@@ -152,8 +159,49 @@ export const RootNavigator: React.FC<RootNavigatorProps> = ({
   const { conversations: marketplaceConversations, openMarketplaceChat } = useMarketplaceChat();
 
   // Navigation State
-  const [activeTab, setActiveTab] = useState<MobileTab>('feed');
+  const [activeTab, setActiveTab] = useState<MobileTab>(() => {
+    if (typeof window !== 'undefined' && window.location.pathname.startsWith('/profile/')) {
+      return 'profile';
+    }
+    return 'feed';
+  });
+  const [viewingProfileUser, setViewingProfileUser] = useState<AppUser | null>(null);
   const [activeCampusSubHub, setActiveCampusSubHub] = useState<CampusSubHub | null>(null);
+
+  const activeProfileUser = targetProfileUser || viewingProfileUser || currentUser;
+
+  useEffect(() => {
+    if (targetProfileUser) {
+      setActiveTab('profile');
+    }
+  }, [targetProfileUser]);
+
+  // Listen for /profile/:id route changes
+  useEffect(() => {
+    const handleRoute = () => {
+      if (typeof window === 'undefined') return;
+      const path = window.location.pathname;
+      const match = path.match(/^\/profile\/([^/]+)/);
+      if (match) {
+        const userId = match[1];
+        console.log('Navigated to:', path);
+        setActiveTab('profile');
+        if (currentUser && currentUser.id === userId) {
+          setViewingProfileUser(currentUser);
+        } else {
+          fetchUserProfileByIdFromSupabase(userId).then((profile) => {
+            if (profile) {
+              setViewingProfileUser(profile);
+            }
+          });
+        }
+      }
+    };
+
+    handleRoute();
+    window.addEventListener('popstate', handleRoute);
+    return () => window.removeEventListener('popstate', handleRoute);
+  }, [currentUser]);
 
 
   // Quick Action Sheet state (center '+' FAB)
@@ -356,8 +404,16 @@ export const RootNavigator: React.FC<RootNavigatorProps> = ({
             {currentUser ? (
               <button
                 type="button"
-                onClick={() => setActiveTab('profile')}
-                className="w-8 h-8 rounded-full border-2 border-amber-500 overflow-hidden shadow-sm"
+                onClick={() => {
+                  setViewingProfileUser(null);
+                  onClearTargetUser?.();
+                  setActiveTab('profile');
+                  if (typeof window !== 'undefined') {
+                    window.history.pushState({}, '', '/');
+                  }
+                }}
+                className="w-8 h-8 rounded-full border-2 border-amber-500 overflow-hidden shadow-sm cursor-pointer hover:opacity-90 transition-opacity"
+                title="Open My Profile"
               >
                 <img 
                   src={currentUser.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100'} 
@@ -1048,15 +1104,36 @@ export const RootNavigator: React.FC<RootNavigatorProps> = ({
           {/* TAB 5: 👤 STUDENT SOCIAL PROFILE                           */}
           {/* ========================================================== */}
           {activeTab === 'profile' && (
-            <UserProfileView
-              user={currentUser}
-              userPosts={posts.filter((p) => p.authorId === currentUser?.id || p.authorUsername === currentUser?.username)}
-              userSnaps={snaps.filter((s) => s.authorId === currentUser?.id)}
-              userBusinesses={userOwnedBusinesses}
-              onOpenCreatePost={onOpenCreatePost}
-              onOpenCreateBusiness={onOpenCreateBusiness}
-              onSelectBusiness={onSelectBusiness}
-            />
+            <div className="space-y-3">
+              {activeProfileUser && currentUser && activeProfileUser.id !== currentUser.id && (
+                <div className="px-1 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setViewingProfileUser(null);
+                      onClearTargetUser?.();
+                      if (typeof window !== 'undefined') {
+                        window.history.pushState({}, '', '/');
+                        console.log('Navigated to:', '/');
+                      }
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-neutral-900 border border-neutral-800 text-neutral-300 hover:text-white text-xs font-semibold cursor-pointer"
+                  >
+                    <ArrowLeft className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Back to My Profile</span>
+                  </button>
+                </div>
+              )}
+              <UserProfileView
+                user={activeProfileUser}
+                userPosts={posts.filter((p) => p.authorId === activeProfileUser?.id || p.authorUsername === activeProfileUser?.username)}
+                userSnaps={snaps.filter((s) => s.authorId === activeProfileUser?.id)}
+                userBusinesses={activeProfileUser?.id === currentUser?.id ? userOwnedBusinesses : businesses.filter((b) => b.ownerId === activeProfileUser?.id)}
+                onOpenCreatePost={onOpenCreatePost}
+                onOpenCreateBusiness={onOpenCreateBusiness}
+                onSelectBusiness={onSelectBusiness}
+              />
+            </div>
           )}
 
 
@@ -1064,95 +1141,78 @@ export const RootNavigator: React.FC<RootNavigatorProps> = ({
       </div>
 
       {/* BOTTOM TAB BAR NAVIGATION */}
-      <nav className="fixed bottom-0 left-0 right-0 h-16 bg-neutral-950/95 backdrop-blur-md border-t border-neutral-800/80 px-2 z-30">
-        <div className="max-w-4xl mx-auto h-full flex items-center justify-around">
-          
-          {/* TAB 1: FEED */}
+      <nav 
+        className="fixed bottom-0 left-0 right-0 h-16 bg-neutral-950/95 backdrop-blur-md border-t border-neutral-800/80 z-30"
+        style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+      >
+        <div 
+          className="max-w-4xl mx-auto h-full grid grid-cols-5 w-full"
+          style={{ gridTemplateColumns: 'repeat(5, 1fr)' }}
+        >
+          {/* COLUMN 1: FEED */}
           <button
             type="button"
             onClick={() => setActiveTab('feed')}
-            className="flex flex-col items-center gap-1 transition-transform active:scale-90 flex-1"
+            className="flex flex-col items-center justify-center h-full w-full col-span-1 transition-transform active:scale-95 cursor-pointer"
           >
-            <span className={`text-lg transition-transform ${activeTab === 'feed' ? 'scale-110' : 'opacity-50'}`}>
-              📰
-            </span>
-            <span className={`text-[10px] font-bold ${activeTab === 'feed' ? 'text-amber-400' : 'text-neutral-400'}`}>
+            <Home className={`w-[22px] h-[22px] transition-colors ${activeTab === 'feed' ? 'text-amber-400' : 'text-neutral-400'}`} />
+            <span className={`text-[10px] font-bold mt-1 leading-none ${activeTab === 'feed' ? 'text-amber-400' : 'text-neutral-400'}`}>
               Feed
             </span>
           </button>
 
-          {/* TAB 2: MARKET */}
+          {/* COLUMN 2: MARKET */}
           <button
             type="button"
             onClick={() => setActiveTab('market')}
-            className="flex flex-col items-center gap-1 transition-transform active:scale-90 flex-1"
+            className="flex flex-col items-center justify-center h-full w-full col-span-1 transition-transform active:scale-95 cursor-pointer"
           >
-            <span className={`text-lg transition-transform ${activeTab === 'market' ? 'scale-110' : 'opacity-50'}`}>
-              🛍️
-            </span>
-            <span className={`text-[10px] font-bold ${activeTab === 'market' ? 'text-amber-400' : 'text-neutral-400'}`}>
+            <ShoppingBag className={`w-[22px] h-[22px] transition-colors ${activeTab === 'market' ? 'text-amber-400' : 'text-neutral-400'}`} />
+            <span className={`text-[10px] font-bold mt-1 leading-none ${activeTab === 'market' ? 'text-amber-400' : 'text-neutral-400'}`}>
               Market
             </span>
           </button>
 
-          {/* CENTER QUICK ACTION FAB (+) */}
-          <div className="relative -top-3 flex items-center justify-center flex-1">
+          {/* COLUMN 3: CENTER QUICK ACTION FAB (+) */}
+          <div className="flex flex-col items-center justify-center h-full w-full col-span-1 relative">
             <button
               type="button"
               onClick={() => setIsActionSheetOpen(true)}
-              className="w-12 h-12 rounded-full bg-gradient-to-tr from-amber-500 to-amber-400 text-neutral-950 flex items-center justify-center shadow-xl shadow-amber-500/30 transition-transform active:scale-95 border-2 border-neutral-950 font-black text-xl"
+              className="relative -top-3.5 w-[56px] h-[56px] min-w-[56px] min-h-[56px] rounded-full bg-gradient-to-tr from-amber-500 to-amber-400 text-neutral-950 flex items-center justify-center shadow-xl shadow-amber-500/30 transition-transform active:scale-95 border-2 border-neutral-950 cursor-pointer"
               title="Campus Quick Action"
             >
-              <Plus className="w-6 h-6 stroke-[3]" />
+              <Plus className="w-[26px] h-[26px] stroke-[2.5] block p-0 text-neutral-950" />
             </button>
           </div>
 
-          {/* TAB 3: CAMPUS HUBS */}
+          {/* COLUMN 4: CAMPUS HUBS */}
           <button
             type="button"
             onClick={() => setActiveTab('campus')}
-            className="flex flex-col items-center gap-1 transition-transform active:scale-90 flex-1"
+            className="flex flex-col items-center justify-center h-full w-full col-span-1 transition-transform active:scale-95 cursor-pointer"
           >
-            <span className={`text-lg transition-transform ${activeTab === 'campus' ? 'scale-110' : 'opacity-50'}`}>
-              🏛️
-            </span>
-            <span className={`text-[10px] font-bold ${activeTab === 'campus' ? 'text-amber-400' : 'text-neutral-400'}`}>
+            <Building2 className={`w-[22px] h-[22px] transition-colors ${activeTab === 'campus' ? 'text-amber-400' : 'text-neutral-400'}`} />
+            <span className={`text-[10px] font-bold mt-1 leading-none ${activeTab === 'campus' ? 'text-amber-400' : 'text-neutral-400'}`}>
               Hubs
             </span>
           </button>
 
-          {/* TAB 4: CHATS */}
+          {/* COLUMN 5: CHATS */}
           <button
             type="button"
             onClick={() => setActiveTab('chats')}
-            className="flex flex-col items-center gap-1 transition-transform active:scale-90 flex-1 relative"
+            className="flex flex-col items-center justify-center h-full w-full col-span-1 transition-transform active:scale-95 cursor-pointer"
           >
-            <div className="relative">
-              <span className={`text-lg transition-transform ${activeTab === 'chats' ? 'scale-110' : 'opacity-50'}`}>
-                💬
-              </span>
+            <div className="relative flex items-center justify-center">
+              <MessageSquare className={`w-[22px] h-[22px] transition-colors ${activeTab === 'chats' ? 'text-amber-400' : 'text-neutral-400'}`} />
               {unreadTotalCount > 0 && (
-                <span className="absolute -top-1 -right-2 w-3.5 h-3.5 bg-amber-500 text-neutral-950 text-[9px] font-black rounded-full flex items-center justify-center">
+                <span className="absolute -top-1.5 -right-2.5 min-w-[14px] h-[14px] px-0.5 bg-amber-500 text-neutral-950 text-[9px] font-black rounded-full flex items-center justify-center shadow-sm">
                   {unreadTotalCount}
                 </span>
               )}
             </div>
-            <span className={`text-[10px] font-bold ${activeTab === 'chats' ? 'text-amber-400' : 'text-neutral-400'}`}>
+            <span className={`text-[10px] font-bold mt-1 leading-none ${activeTab === 'chats' ? 'text-amber-400' : 'text-neutral-400'}`}>
               Chats
-            </span>
-          </button>
-
-          {/* TAB 5: STUDENT PROFILE */}
-          <button
-            type="button"
-            onClick={() => setActiveTab('profile')}
-            className="flex flex-col items-center gap-1 transition-transform active:scale-90 flex-1"
-          >
-            <span className={`text-lg transition-transform ${activeTab === 'profile' ? 'scale-110' : 'opacity-50'}`}>
-              👤
-            </span>
-            <span className={`text-[10px] font-bold ${activeTab === 'profile' ? 'text-amber-400' : 'text-neutral-400'}`}>
-              Profile
             </span>
           </button>
 
@@ -1350,7 +1410,14 @@ export const RootNavigator: React.FC<RootNavigatorProps> = ({
           onClose={() => setIsGlobalSearchOpen(false)}
           initialTab={initialSearchTab}
           onSelectUser={(u) => {
-            // open profile or chat
+            const targetPath = `/profile/${u.id}`;
+            console.log('Navigated to:', targetPath);
+            if (typeof window !== 'undefined') {
+              window.history.pushState({}, '', targetPath);
+            }
+            setViewingProfileUser(u);
+            setActiveTab('profile');
+            onViewUserProfile?.(u.id, u);
           }}
           onSelectPage={(pageId) => {
             // open hub page
@@ -1369,7 +1436,14 @@ export const RootNavigator: React.FC<RootNavigatorProps> = ({
           onClose={() => setIsPeopleDiscoveryOpen(false)}
           currentUser={currentUser}
           onSelectUser={(u) => {
-            // view profile
+            const targetPath = `/profile/${u.id}`;
+            console.log('Navigated to:', targetPath);
+            if (typeof window !== 'undefined') {
+              window.history.pushState({}, '', targetPath);
+            }
+            setViewingProfileUser(u);
+            setActiveTab('profile');
+            onViewUserProfile?.(u.id, u);
           }}
           onToggleFollow={(id) => {
             toggleFollowUser(id);

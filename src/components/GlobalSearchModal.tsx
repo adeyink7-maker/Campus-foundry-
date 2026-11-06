@@ -133,20 +133,29 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
       handleSaveRecentSearch(query);
     }
 
-    if (item.type === 'person' && onSelectUser) {
-      onSelectUser({
-        id: item.id,
-        email: item.email || '',
-        fullName: item.full_name,
-        username: item.username,
-        role: 'student',
-        faculty: item.faculty,
-        department: item.department,
-        level: item.level || '300L',
-        avatarUrl: item.avatar_url,
-        isVerified: !!item.is_verified,
-        bio: item.bio,
-      });
+    const isPerson = item.type === 'person' || activeTab === 'people';
+    if (isPerson) {
+      const path = `/profile/${item.id}`;
+      console.log('Navigated path:', path);
+      if (typeof window !== 'undefined') {
+        window.history.pushState({}, '', path);
+        window.dispatchEvent(new PopStateEvent('popstate'));
+      }
+      if (onSelectUser) {
+        onSelectUser({
+          id: item.id,
+          email: item.email || '',
+          fullName: item.full_name,
+          username: item.username,
+          role: 'student',
+          faculty: item.faculty,
+          department: item.department,
+          level: item.level || '300L',
+          avatarUrl: item.avatar_url,
+          isVerified: !!item.is_verified,
+          bio: item.bio,
+        });
+      }
       onClose();
     } else if (item.type === 'page' && onSelectPage) {
       onSelectPage(item.id);
@@ -272,13 +281,20 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
           </div>
         ) : results.length > 0 ? (
           <div className="space-y-2.5">
-            {results.map((item) => (
-              <div
-                key={item.id}
-                onClick={() => handleItemClick(item)}
-                className="p-3.5 rounded-2xl bg-neutral-900 border border-neutral-800 hover:border-amber-500/40 transition-all flex items-center justify-between gap-3 cursor-pointer group"
-              >
-                <div className="flex items-center gap-3 min-w-0">
+            {results.map((item) => {
+              const isPerson = activeTab === 'people' || item.type === 'person';
+              const itemHref = isPerson ? `/profile/${item.id}` : '#';
+              return (
+                <a
+                  key={item.id}
+                  href={itemHref}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    handleItemClick(item);
+                  }}
+                  className="p-3.5 rounded-2xl bg-neutral-900 border border-neutral-800 hover:border-amber-500/40 transition-all flex items-center justify-between gap-3 cursor-pointer group text-left block no-underline"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
                   {activeTab === 'people' ? (
                     <img
                       src={item.avatar_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100'}
@@ -316,8 +332,9 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
                 <div className="shrink-0 text-neutral-500 group-hover:text-amber-400 transition-colors">
                   <ExternalLink className="h-4 w-4" />
                 </div>
-              </div>
-            ))}
+              </a>
+            );
+          })}
           </div>
         ) : (
           <div className="text-center py-24 space-y-2">

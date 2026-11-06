@@ -1,5 +1,6 @@
 import { supabase, isSupabaseConfigured, emitAppToast, logAdminActionInSupabase } from './supabase';
 import { VerificationRequest, VerificationStatus, StudentLevel } from '../types';
+import { getFriendlyError, withNetworkRetry } from '../utils/friendlyErrors';
 
 export const VERIFICATION_BUCKET = 'verification-proofs';
 
@@ -15,64 +16,67 @@ export async function submitVerificationRequest({
   file: File;
   note?: string;
 }): Promise<VerificationRequest> {
-  if (!isSupabaseConfigured) {
-    throw new Error('Supabase is not configured.');
-  }
-
   // Ensure file size is reasonable (max 10MB)
   if (file.size > 10 * 1024 * 1024) {
-    throw new Error('Image file is too large. Please upload an image under 10MB.');
+    throw new Error('That file is too large or not supported. Please use a PNG or JPG under 10MB.');
   }
 
   const fileExt = file.name.split('.').pop()?.toLowerCase() || 'jpg';
   const fileName = `${Date.now()}_proof.${fileExt}`;
   const targetPath = `${userId}/${fileName}`;
 
-  // 1. Upload proof file to private storage bucket
-  const { data: uploadData, error: uploadError } = await supabase.storage
-    .from(VERIFICATION_BUCKET)
-    .upload(targetPath, file, {
-      upsert: true,
-      contentType: file.type || 'image/jpeg',
-    });
+  try {
+    return await withNetworkRetry(async () => {
+      // 1. Upload proof file to storage bucket
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from(VERIFICATION_BUCKET)
+        .upload(targetPath, file, {
+          upsert: true,
+          contentType: file.type || 'image/jpeg',
+        });
 
-  if (uploadError) {
-    console.error('[Verification Proof Upload Error]:', uploadError);
-    throw new Error(`Failed to upload proof image: ${uploadError.message}`);
+      if (uploadError) {
+        console.error('[Verification Proof Upload Error]:', uploadError);
+        throw uploadError;
+      }
+
+      const storedPath = uploadData?.path || targetPath;
+
+      // 2. Insert into verification_requests table
+      const { data: inserted, error: insertError } = await supabase
+        .from('verification_requests')
+        .insert({
+          user_id: userId,
+          proof_url: storedPath,
+          note: note?.trim() || null,
+          status: 'pending',
+          created_at: new Date().toISOString(),
+        })
+        .select()
+        .single();
+
+      if (insertError) {
+        console.error('[Verification Request Insert Error]:', insertError);
+        throw insertError;
+      }
+
+      emitAppToast("Your verification request has been sent. We'll review it soon.", 'success');
+
+      return {
+        id: inserted.id,
+        userId: inserted.user_id,
+        proofUrl: inserted.proof_url,
+        note: inserted.note,
+        status: inserted.status as VerificationStatus,
+        reviewedBy: inserted.reviewed_by,
+        reviewedAt: inserted.reviewed_at,
+        createdAt: inserted.created_at,
+      };
+    }, 2);
+  } catch (err: unknown) {
+    const friendly = getFriendlyError(err, 'verification');
+    throw new Error(friendly);
   }
-
-  const storedPath = uploadData?.path || targetPath;
-
-  // 2. Insert into verification_requests table
-  const { data: inserted, error: insertError } = await supabase
-    .from('verification_requests')
-    .insert({
-      user_id: userId,
-      proof_url: storedPath,
-      note: note?.trim() || null,
-      status: 'pending',
-      created_at: new Date().toISOString(),
-    })
-    .select()
-    .single();
-
-  if (insertError) {
-    console.error('[Verification Request Insert Error]:', insertError);
-    throw new Error(`Failed to submit verification request: ${insertError.message}`);
-  }
-
-  emitAppToast('Verification request submitted successfully! Campus admins will review it soon.', 'info');
-
-  return {
-    id: inserted.id,
-    userId: inserted.user_id,
-    proofUrl: inserted.proof_url,
-    note: inserted.note,
-    status: inserted.status as VerificationStatus,
-    reviewedBy: inserted.reviewed_by,
-    reviewedAt: inserted.reviewed_at,
-    createdAt: inserted.created_at,
-  };
 }
 
 /**

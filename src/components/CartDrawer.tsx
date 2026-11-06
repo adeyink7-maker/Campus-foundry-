@@ -23,6 +23,8 @@ import { ALL_UNILORIN_HOSTELS } from '../data/mockData';
 import { HostelSelectMenu } from './HostelSelectMenu';
 import { LiveDeliveryTrackerModal, TrackerOrderData } from './LiveDeliveryTrackerModal';
 import { PaymentMethod, formatNaira, isSupabaseConfigured } from '../services/marketplace';
+import { getFriendlyError } from '../utils/friendlyErrors';
+import { FriendlyAlert } from './FriendlyAlert';
 
 interface CartDrawerProps {
   onOpenAuth?: (mode?: 'signin' | 'signup') => void;
@@ -103,8 +105,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
 
       setPlacedOrders(results);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Failed to place order';
-      setErrorMessage(msg);
+      setErrorMessage(getFriendlyError(err, 'order'));
     } finally {
       setIsSubmitting(false);
     }
@@ -304,11 +305,17 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
 
             {/* Error Notice */}
             {errorMessage && (
-              <div className="m-4 p-3 rounded-xl bg-rose-500/20 border border-rose-500/40 text-rose-300 text-xs flex items-center justify-between">
-                <span>{errorMessage}</span>
-                <button type="button" onClick={() => setErrorMessage(null)} className="p-1 hover:text-white">
-                  <X className="w-3.5 h-3.5" />
-                </button>
+              <div className="mx-4 mt-4">
+                <FriendlyAlert
+                  message={errorMessage}
+                  onRetry={() => {
+                    const fakeEvent = { preventDefault: () => {} } as React.FormEvent;
+                    handleConfirmOrder(fakeEvent);
+                  }}
+                  onDismiss={() => setErrorMessage(null)}
+                  variant="warning"
+                  isRetrying={isSubmitting}
+                />
               </div>
             )}
 

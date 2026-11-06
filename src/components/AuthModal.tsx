@@ -15,6 +15,8 @@ import { UserRole, StudentLevel } from '../types';
 import { UNIVERSITIES, DEFAULT_UNIVERSITY } from '../constants/universities';
 import { FacultyDepartmentSelector } from './FacultyDepartmentSelector';
 import { HostelSelectMenu } from './HostelSelectMenu';
+import { getFriendlyError } from '../utils/friendlyErrors';
+import { FriendlyAlert } from './FriendlyAlert';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -167,8 +169,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   };
 
   // Handle Sign In with Email & Password
-  const handleSignIn = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSignIn = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     setError(null);
     setSuccess(null);
 
@@ -196,26 +198,24 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         onSuccess?.();
         onClose();
       }, 500);
-    } catch (err: any) {
-      const msg = err?.message || 'Failed to sign in. Please check your credentials.';
-      const lower = msg.toLowerCase();
-      // If user signed up previously but has not confirmed, route them to 6-digit OTP verification screen
-      if (lower.includes('not confirmed') || lower.includes('verification code') || lower.includes('confirm')) {
+    } catch (err: unknown) {
+      const raw = String((err as any)?.message || err || '').toLowerCase();
+      if (raw.includes('not confirmed') || raw.includes('verification code') || raw.includes('confirm')) {
         setLastSubmittedEmail(cleanEmail);
         setOtpCode(['', '', '', '', '', '']);
         setMode('confirm_sent');
         setError('Your email is not confirmed yet. Please enter the 6-digit code sent to your email.');
         return;
       }
-      setError(msg);
+      setError(getFriendlyError(err, 'signin'));
     } finally {
       setIsSubmitting(false);
     }
   };
 
   // Handle Sign Up with Any Email
-  const handleSignUp = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSignUp = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     setError(null);
     setSuccess(null);
 
@@ -226,7 +226,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     }
 
     if (!password || password.length < 6) {
-      setError('Password must be at least 6 characters.');
+      setError('Please choose a password with at least 6 characters.');
       return;
     }
 
@@ -273,16 +273,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           onClose();
         }, 500);
       }
-    } catch (err: any) {
-      setError(err?.message || 'Failed to create account. Please try again.');
+    } catch (err: unknown) {
+      setError(getFriendlyError(err, 'signup'));
     } finally {
       setIsSubmitting(false);
     }
   };
 
   // Submit 6-digit verification code
-  const handleVerifyOtpSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleVerifyOtpSubmit = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     const token = otpCode.join('');
     if (token.length !== 6) {
       setError('Please enter all 6 digits of your verification code.');
@@ -306,9 +306,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         onSuccess?.();
         onClose();
       }, 700);
-    } catch (err: any) {
-      const msg = err?.message || 'Verification failed. Please check the code and try again.';
-      setError(msg);
+    } catch (err: unknown) {
+      setError(getFriendlyError(err, 'otp'));
     } finally {
       setIsSubmitting(false);
     }
@@ -333,8 +332,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       setCooldownSeconds(60);
       setOtpCode(['', '', '', '', '', '']);
       otpInputRefs.current[0]?.focus();
-    } catch (err: any) {
-      setError(err?.message || 'Failed to resend confirmation code. Please try again.');
+    } catch (err: unknown) {
+      setError(getFriendlyError(err, 'otp'));
     } finally {
       setIsResending(false);
     }
@@ -418,26 +417,37 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           
           {/* Alerts */}
           {error && (
-            <div className="rounded-xl border border-rose-500/20 bg-rose-500/10 p-3 text-xs text-rose-300 flex items-start gap-2 animate-in fade-in">
-              <AlertCircle className="h-4 w-4 shrink-0 text-rose-400 mt-0.5" />
-              <div className="flex-1 space-y-1">
-                <p className="font-medium leading-relaxed">{error}</p>
-                {lastSubmittedEmail && mode === 'confirm_sent' && (
-                  <button
-                    type="button"
-                    onClick={handleResendConfirmation}
-                    disabled={cooldownSeconds > 0 || isResending}
-                    className="text-xs font-bold text-orange-400 hover:underline inline-flex items-center gap-1 mt-1 disabled:opacity-50 cursor-pointer"
-                  >
-                    <RotateCw className={`h-3 w-3 ${isResending ? 'animate-spin' : ''}`} />
-                    <span>
-                      {cooldownSeconds > 0
-                        ? `Resend code in ${cooldownSeconds}s`
-                        : 'Resend code'}
-                    </span>
-                  </button>
-                )}
-              </div>
+            <div className="space-y-2">
+              <FriendlyAlert
+                message={error}
+                onRetry={
+                  mode === 'signin'
+                    ? () => handleSignIn()
+                    : mode === 'signup'
+                    ? () => handleSignUp()
+                    : mode === 'confirm_sent'
+                    ? () => handleVerifyOtpSubmit()
+                    : undefined
+                }
+                onDismiss={() => setError(null)}
+                variant="warning"
+                isRetrying={isSubmitting}
+              />
+              {lastSubmittedEmail && mode === 'confirm_sent' && (
+                <button
+                  type="button"
+                  onClick={handleResendConfirmation}
+                  disabled={cooldownSeconds > 0 || isResending}
+                  className="text-xs font-bold text-amber-400 hover:underline inline-flex items-center gap-1 pl-1 disabled:opacity-50 cursor-pointer"
+                >
+                  <RotateCw className={`h-3 w-3 ${isResending ? 'animate-spin' : ''}`} />
+                  <span>
+                    {cooldownSeconds > 0
+                      ? `Resend code in ${cooldownSeconds}s`
+                      : 'Resend code'}
+                  </span>
+                </button>
+              )}
             </div>
           )}
 

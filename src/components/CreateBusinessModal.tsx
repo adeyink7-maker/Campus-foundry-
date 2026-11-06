@@ -22,6 +22,8 @@ import { supabase, isSupabaseConfigured } from '../services/supabase';
 import { mapMarketplaceError } from '../services/marketplace';
 import { HostelSelectMenu } from './HostelSelectMenu';
 import { FacultyDepartmentSelector } from './FacultyDepartmentSelector';
+import { getFriendlyError } from '../utils/friendlyErrors';
+import { FriendlyAlert } from './FriendlyAlert';
 
 interface CreateBusinessModalProps {
   isOpen: boolean;
@@ -231,8 +233,8 @@ export const CreateBusinessModal = ({
     setServices(updated);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
 
     // LAUNCH POLISH: Prevent double submission while request is processing
     if (isSubmitting) return;
@@ -339,9 +341,9 @@ export const CreateBusinessModal = ({
         if (insertError) {
           console.error('[CreateBusinessModal] Insert error:', insertError);
           if (insertError.code === '23505' || insertError.message?.toLowerCase().includes('duplicate') || insertError.message?.toLowerCase().includes('unique')) {
-            setSubmitError('You already have a registered store on Campus Foundry.');
+            setSubmitError('This email already has a registered store. Try signing in instead.');
           } else {
-            setSubmitError(mapMarketplaceError(insertError) || 'Failed to create your store. Please try again.');
+            setSubmitError(getFriendlyError(insertError, 'store'));
           }
           setIsSubmitting(false);
           return;
@@ -401,9 +403,9 @@ export const CreateBusinessModal = ({
 
       onBusinessCreated(newBusiness);
       onClose();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('[CreateBusinessModal] Exception:', err);
-      setSubmitError('An unexpected error occurred while creating your store. Please try again.');
+      setSubmitError(getFriendlyError(err, 'store'));
     } finally {
       setIsSubmitting(false);
     }
@@ -471,6 +473,16 @@ export const CreateBusinessModal = ({
           {/* Part 2: Middle Scrollable Body */}
           <div className="flex-1 min-h-0 overflow-y-auto p-5 sm:p-6 space-y-4 text-xs sm:text-sm overscroll-contain">
             
+            {submitError && (
+              <FriendlyAlert
+                message={submitError}
+                onRetry={() => handleSubmit()}
+                onDismiss={() => setSubmitError(null)}
+                variant="warning"
+                isRetrying={isSubmitting}
+              />
+            )}
+
             {/* Business Basic Info */}
             <div className="space-y-3">
             <h3 className="text-xs font-bold text-emerald-400 uppercase tracking-wider">

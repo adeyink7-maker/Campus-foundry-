@@ -18,6 +18,8 @@ import {
   submitVerificationRequest,
   getProofSignedUrl 
 } from '../services/verificationService';
+import { getFriendlyError } from '../utils/friendlyErrors';
+import { FriendlyAlert } from './FriendlyAlert';
 
 interface VerificationModalProps {
   isOpen: boolean;
@@ -82,12 +84,12 @@ export const VerificationModal = ({
     if (!file) return;
 
     if (!file.type.startsWith('image/')) {
-      setError('Please select an image file (PNG, JPG, JPEG, WEBP).');
+      setError('That file is too large or not supported. Please use a PNG or JPG under 10MB.');
       return;
     }
 
     if (file.size > 10 * 1024 * 1024) {
-      setError('Image must be under 10MB.');
+      setError('That file is too large or not supported. Please use a PNG or JPG under 10MB.');
       return;
     }
 
@@ -97,8 +99,8 @@ export const VerificationModal = ({
     setPreviewUrl(objectUrl);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     if (!currentUser) return;
 
     if (!selectedFile) {
@@ -118,11 +120,11 @@ export const VerificationModal = ({
       });
 
       setRequest(newReq);
-      setSuccess('Verification request submitted successfully! Campus admins will review your documents.');
+      setSuccess("Your verification request has been sent. We'll review it soon.");
       await syncUserProfileFromSupabase(currentUser.id);
       onStatusUpdated?.();
-    } catch (err: any) {
-      setError(err?.message || 'Failed to submit verification request. Please try again.');
+    } catch (err: unknown) {
+      setError(getFriendlyError(err, 'verification'));
     } finally {
       setIsSubmitting(false);
     }
@@ -168,10 +170,13 @@ export const VerificationModal = ({
         <div className="overflow-y-auto p-5 sm:p-6 space-y-4">
           
           {error && (
-            <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-3.5 text-xs text-rose-300 flex items-start gap-2">
-              <AlertCircle className="h-4 w-4 shrink-0 text-rose-400 mt-0.5" />
-              <p className="font-medium">{error}</p>
-            </div>
+            <FriendlyAlert
+              message={error}
+              onRetry={selectedFile ? () => { handleSubmit(); } : undefined}
+              onDismiss={() => setError(null)}
+              variant="warning"
+              isRetrying={isSubmitting}
+            />
           )}
 
           {success && (

@@ -22,6 +22,7 @@ import {
   isMockConversation
 } from '../services/supabase';
 import { sendMessage as apiSendMessage, getOrCreateConversation } from '../services/marketplace';
+import { getFriendlyError } from '../utils/friendlyErrors';
 
 export interface SendMessageOptions {
   orderSnippet?: ChatOrderSnippet;
@@ -628,39 +629,27 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
           newMessage.timestamp = marketplaceMsg.createdAt;
           newMessage.conversationId = realMarketplaceConvId;
           updatedConv.id = realMarketplaceConvId;
-        } catch (dbErr: any) {
-          const errCode = dbErr?.code || dbErr?.statusCode || 'unknown';
-          const errMsg = dbErr?.message || String(dbErr);
-          const errDetails = dbErr?.details || null;
-          if (errCode === '42501' || errMsg.includes('permission denied')) {
-            console.warn('[Supabase save notice (RLS permission 42501)]:', { message: errMsg, code: errCode, details: errDetails, payload: newMessage });
-          } else {
-            console.error('[Supabase save error]:', { message: errMsg, code: errCode, details: errDetails, payload: newMessage });
-            emitAppToast(`Could not send (code ${errCode})`, 'error');
-            throw dbErr;
-          }
+        } catch (dbErr: unknown) {
+          console.error('[Supabase save error]:', dbErr);
+          const friendly = getFriendlyError(dbErr, 'dm');
+          emitAppToast(friendly, 'error');
+          throw dbErr;
         }
       } else {
         // Direct conversation: verify row in chat_conversations FIRST
         const conversationExists = await ensureConversationInSupabase(updatedConv, authUid);
         if (!conversationExists) {
           console.error('[Supabase send error]: Conversation row creation/check failed for', safeConvId);
-          emitAppToast('Failed to send message: Conversation thread could not be created', 'error');
+          emitAppToast(getFriendlyError(new Error('Conversation thread could not be created'), 'dm'), 'error');
           return;
         }
         try {
           await insertChatMessageInSupabase(newMessage, authUid);
-        } catch (dbErr: any) {
-          const errCode = dbErr?.code || dbErr?.statusCode || 'unknown';
-          const errMsg = dbErr?.message || String(dbErr);
-          const errDetails = dbErr?.details || null;
-          if (errCode === '42501' || errMsg.includes('permission denied')) {
-            console.warn('[Supabase save notice (RLS permission 42501)]:', { message: errMsg, code: errCode, details: errDetails, payload: newMessage });
-          } else {
-            console.error('[Supabase save error]:', { message: errMsg, code: errCode, details: errDetails, payload: newMessage });
-            emitAppToast(`Could not send (code ${errCode})`, 'error');
-            throw dbErr;
-          }
+        } catch (dbErr: unknown) {
+          console.error('[Supabase save error]:', dbErr);
+          const friendly = getFriendlyError(dbErr, 'dm');
+          emitAppToast(friendly, 'error');
+          throw dbErr;
         }
       }
     }

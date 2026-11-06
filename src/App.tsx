@@ -107,6 +107,7 @@ import { StaffManagementModal } from './components/StaffManagementModal';
 
 // Supabase Realtime & CRUD Services
 import {
+  supabase,
   isSupabaseConfigured,
   fetchCampusPostsFromSupabase,
   createCampusPostInSupabase,
@@ -150,7 +151,7 @@ function MainApp() {
   const [authRole, setAuthRole] = useState<UserRole>('student');
 
   // Toast State
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [toastData, setToastData] = useState<{ message: string; type: 'error' | 'success' | 'info' } | null>(null);
 
   // Active Ecosystem Module
   const [currentModule, setCurrentModule] = useState<AppModule>('feed');
@@ -173,9 +174,9 @@ function MainApp() {
   // Campus Snaps Data State
   const [snaps, setSnaps] = useState<CampusSnap[]>([]);
 
-  const showToast = (msg: string) => {
-    setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 4000);
+  const showToast = (msg: string, type: 'error' | 'success' | 'info' = 'info') => {
+    setToastData({ message: msg, type });
+    setTimeout(() => setToastData(null), 4000);
   };
 
   const handleOpenAuth = (action?: (() => void) | any, role: UserRole = 'student') => {
@@ -218,7 +219,7 @@ function MainApp() {
     const handleCampusToast = (e: Event) => {
       const detail = (e as CustomEvent)?.detail;
       if (detail?.message) {
-        showToast(detail.message);
+        showToast(detail.message, detail.type || 'info');
       }
     };
     window.addEventListener('campus-toast', handleCampusToast);
@@ -236,6 +237,93 @@ function MainApp() {
       loadBusinesses();
     }
   }, [loadBusinesses]);
+
+  // Register /profile/:id route & handle client navigation without falling through to catch-all
+  useEffect(() => {
+    const handleRouteChange = async () => {
+      if (typeof window === 'undefined') return;
+      const pathname = window.location.pathname;
+      const profileMatch = pathname.match(/^\/profile\/([^/]+)/);
+
+      if (profileMatch) {
+        const userId = decodeURIComponent(profileMatch[1]);
+        console.log('Navigated path:', pathname);
+
+        if (currentUser && currentUser.id === userId) {
+          setTargetProfileUser(currentUser);
+          setCurrentModule('dashboard');
+          return;
+        }
+
+        try {
+          const { data, error } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', userId)
+            .maybeSingle();
+
+          if (data && !error) {
+            setTargetProfileUser({
+              id: data.id,
+              email: data.email || `${data.username || 'student'}@unilorin.edu.ng`,
+              fullName: data.full_name || 'Campus Student',
+              username: data.username || `@student_${data.id.slice(0, 5)}`,
+              role: (data.role as UserRole) || 'student',
+              avatarUrl: data.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300',
+              bio: data.bio || 'Undergraduate at University of Ilorin.',
+              level: (data.level as StudentLevel) || '300L',
+              department: data.department || 'Undergraduate',
+              faculty: data.faculty || 'University of Ilorin',
+              hostelLocation: data.hostel_location || '',
+              university: data.university || 'University of Ilorin (UNILORIN)',
+              followersCount: data.followers_count || 0,
+              followingCount: data.following_count || 0,
+            });
+          } else {
+            setTargetProfileUser({
+              id: userId,
+              email: 'student@unilorin.edu.ng',
+              fullName: 'Campus Student',
+              username: `@student_${userId.slice(0, 5)}`,
+              role: 'student',
+              avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300',
+              bio: 'Undergraduate at University of Ilorin.',
+              level: '300L',
+              department: 'Undergraduate',
+              faculty: 'University of Ilorin',
+              followersCount: 0,
+              followingCount: 0,
+            });
+          }
+        } catch {
+          setTargetProfileUser({
+            id: userId,
+            email: 'student@unilorin.edu.ng',
+            fullName: 'Campus Student',
+            username: `@student_${userId.slice(0, 5)}`,
+            role: 'student',
+            avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300',
+            bio: 'Undergraduate at University of Ilorin.',
+            level: '300L',
+            department: 'Undergraduate',
+            faculty: 'University of Ilorin',
+            followersCount: 0,
+            followingCount: 0,
+          });
+        }
+        setCurrentModule('dashboard');
+      } else if (pathname !== '/' && pathname !== '') {
+        // Unrecognized path: catch-all redirect to home
+        console.log('Navigated to:', '/');
+        window.history.replaceState({}, '', '/');
+        setTargetProfileUser(null);
+      }
+    };
+
+    handleRouteChange();
+    window.addEventListener('popstate', handleRouteChange);
+    return () => window.removeEventListener('popstate', handleRouteChange);
+  }, [currentUser]);
 
   // Synchronize social posts & snaps data from Supabase backend
   useEffect(() => {
@@ -366,10 +454,18 @@ function MainApp() {
           defaultRole={authRole}
           onSuccess={handleAuthSuccess}
         />
-        {toastMessage && (
-          <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-2xl border border-emerald-500/30 bg-neutral-900/95 px-5 py-3.5 text-xs sm:text-sm font-semibold text-white shadow-2xl backdrop-blur-md animate-in slide-in-from-bottom-5">
-            <span className="flex h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span>{toastMessage}</span>
+        {toastData && (
+          <div className={`fixed bottom-6 right-6 z-50 flex items-center gap-2.5 rounded-2xl border px-5 py-3.5 text-xs sm:text-sm font-semibold shadow-2xl backdrop-blur-md animate-in slide-in-from-bottom-5 max-w-md ${
+            toastData.type === 'error'
+              ? 'border-amber-500/35 bg-neutral-900/95 text-amber-200'
+              : toastData.type === 'success'
+              ? 'border-emerald-500/35 bg-neutral-900/95 text-emerald-200'
+              : 'border-sky-500/35 bg-neutral-900/95 text-white'
+          }`}>
+            <span className={`flex h-2 w-2 rounded-full animate-pulse ${
+              toastData.type === 'error' ? 'bg-amber-400' : toastData.type === 'success' ? 'bg-emerald-400' : 'bg-sky-400'
+            }`} />
+            <span>{toastData.message}</span>
           </div>
         )}
       </>
@@ -377,6 +473,13 @@ function MainApp() {
   }
 
   const handleViewUserProfile = (authorId?: string, authorDetails?: any) => {
+    if (!authorId) return;
+    const path = `/profile/${authorId}`;
+    console.log('Navigated path:', path);
+    if (typeof window !== 'undefined') {
+      window.history.pushState({}, '', path);
+    }
+
     if (currentUser && authorId === currentUser.id) {
       setTargetProfileUser(currentUser);
       setCurrentModule('dashboard');
@@ -384,19 +487,19 @@ function MainApp() {
     }
 
     const resolvedUser: AppUser = {
-      id: authorId || `user_${Date.now()}`,
+      id: authorId,
       email: `${authorDetails?.username?.replace('@', '') || 'student'}@unilorin.edu.ng`,
-      fullName: authorDetails?.fullName || 'Campus Student',
+      fullName: authorDetails?.fullName || authorDetails?.full_name || 'Campus Student',
       username: authorDetails?.username || `@student_${authorId?.slice(0, 5) || 'unilorin'}`,
       role: 'student',
-      avatarUrl: authorDetails?.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300',
-      bio: 'Undergraduate building solutions, collaborating on research, and running campus initiatives.',
+      avatarUrl: authorDetails?.avatarUrl || authorDetails?.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300',
+      bio: authorDetails?.bio || 'Undergraduate building solutions, collaborating on research, and running campus initiatives.',
       level: authorDetails?.level || '300L',
       department: authorDetails?.department || 'Computer Science',
       faculty: authorDetails?.faculty || 'Communication & Information Sciences',
       hostelLocation: 'Zamfara Hostel Block B',
-      followersCount: 0,
-      followingCount: 0,
+      followersCount: authorDetails?.followersCount || authorDetails?.followers_count || 0,
+      followingCount: authorDetails?.followingCount || authorDetails?.following_count || 0,
     };
 
     setTargetProfileUser(resolvedUser);
@@ -629,6 +732,14 @@ function MainApp() {
           showToast={showToast}
           onSwitchToWeb={() => setViewMode('web')}
           onViewUserProfile={handleViewUserProfile}
+          targetProfileUser={targetProfileUser}
+          onClearTargetUser={() => {
+            setTargetProfileUser(null);
+            console.log('Navigated to:', '/');
+            if (typeof window !== 'undefined') {
+              window.history.pushState({}, '', '/');
+            }
+          }}
           isLoadingBusinesses={isLoadingBusinesses}
           businessesError={businessesError}
           onRetryBusinesses={loadBusinesses}
@@ -862,10 +973,18 @@ function MainApp() {
       <PlayerCardOverlay onOpenProfile={handleViewUserProfile} />
       <PlayerCardEditorModal />
 
-      {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-2xl border border-emerald-500/30 bg-neutral-900/95 px-5 py-3.5 text-xs sm:text-sm font-semibold text-white shadow-2xl backdrop-blur-md animate-in slide-in-from-bottom-5">
-          <span className="flex h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-          <span>{toastMessage}</span>
+      {toastData && (
+        <div className={`fixed bottom-6 right-6 z-50 flex items-center gap-2.5 rounded-2xl border px-5 py-3.5 text-xs sm:text-sm font-semibold shadow-2xl backdrop-blur-md animate-in slide-in-from-bottom-5 max-w-md ${
+          toastData.type === 'error'
+            ? 'border-amber-500/35 bg-neutral-900/95 text-amber-200'
+            : toastData.type === 'success'
+            ? 'border-emerald-500/35 bg-neutral-900/95 text-emerald-200'
+            : 'border-sky-500/35 bg-neutral-900/95 text-white'
+        }`}>
+          <span className={`flex h-2 w-2 rounded-full animate-pulse ${
+            toastData.type === 'error' ? 'bg-amber-400' : toastData.type === 'success' ? 'bg-emerald-400' : 'bg-sky-400'
+          }`} />
+          <span>{toastData.message}</span>
         </div>
       )}
 

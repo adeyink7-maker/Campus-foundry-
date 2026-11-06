@@ -14,6 +14,7 @@ import { useAuth } from '../context/AuthContext';
 import { LiveCameraModal } from './LiveCameraModal';
 import { uploadSnapMedia, emitAppToast } from '../services/supabase';
 import { dataUrlToBlob } from '../utils/imageOptimizer';
+import { getFriendlyError } from '../utils/friendlyErrors';
 
 interface CreateSnapModalProps {
   isOpen: boolean;
@@ -188,10 +189,9 @@ export const CreateSnapModal: React.FC<CreateSnapModalProps> = ({
       setCaption('');
       setCustomMediaUrl('');
       onClose();
-    } catch (err: any) {
-      // LAUNCH POLISH: Safe error catch with custom toast notification
+    } catch (err: unknown) {
       console.error('[CreateSnapModal Submit Error]:', err);
-      emitAppToast(err?.message ? `Failed to post story: ${err.message}` : 'Failed to post story. Please try again.', 'error');
+      emitAppToast(getFriendlyError(err, 'snap'), 'error');
     }
   };
 

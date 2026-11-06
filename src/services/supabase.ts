@@ -1,5 +1,6 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { CampusPost, CampusSnap, StudentBusiness, CampusComment, ChatConversation, ChatMessage } from '../types';
+import { getFriendlyError, withNetworkRetry } from '../utils/friendlyErrors';
 
 /**
  * Checks if a string is a Supabase API key (publishable key, secret key, or JWT)
@@ -226,33 +227,24 @@ export async function uploadMedia(
   const cleanContentType = rawMime ? rawMime.split(';')[0].trim() : undefined;
 
   try {
-    const { data, error } = await supabase.storage.from(bucket).upload(targetPath, file, {
-      upsert: true,
-      contentType: cleanContentType,
-    });
-
-    if (error) {
-      console.error(`[Supabase Storage Upload Error (${bucket}/${targetPath})]:`, {
-        message: error.message,
-        code: (error as any)?.code || (error as any)?.statusCode,
-        details: (error as any)?.details || error.message,
-        error,
+    return await withNetworkRetry(async () => {
+      const { data, error } = await supabase.storage.from(bucket).upload(targetPath, file, {
+        upsert: true,
+        contentType: cleanContentType,
       });
-      emitAppToast(`Upload failed: ${error.message || 'Storage error'}`, 'error');
-      throw error;
-    }
 
-    const { data: publicData } = supabase.storage.from(bucket).getPublicUrl(data.path);
-    return publicData.publicUrl;
-  } catch (err: any) {
-    console.error(`[Supabase Storage Exception (${bucket}/${targetPath})]:`, {
-      message: err?.message || err,
-      code: err?.code || err?.statusCode,
-      details: err?.details || err?.message,
-      err,
-    });
-    emitAppToast(err?.message ? `Upload failed: ${err.message}` : 'Upload failed. Please try again.', 'error');
-    throw err;
+      if (error) {
+        console.error(`[Supabase Storage Upload Error (${bucket}/${targetPath})]:`, error);
+        throw error;
+      }
+
+      const { data: publicData } = supabase.storage.from(bucket).getPublicUrl(data.path);
+      return publicData.publicUrl;
+    }, 2);
+  } catch (err: unknown) {
+    const friendly = getFriendlyError(err, 'upload');
+    emitAppToast(friendly, 'error');
+    throw new Error(friendly);
   }
 }
 
@@ -447,43 +439,29 @@ export async function uploadVoiceNoteAudio(
   const cleanContentType = rawMime ? rawMime.split(';')[0].trim() : `audio/${ext}`;
 
   try {
-    const { data, error } = await supabase.storage
-      .from('audio')
-      .upload(filePath, fileOrBlob, {
-        upsert: true,
-        contentType: cleanContentType,
-      });
+    return await withNetworkRetry(async () => {
+      const { data, error } = await supabase.storage
+        .from('audio')
+        .upload(filePath, fileOrBlob, {
+          upsert: true,
+          contentType: cleanContentType,
+        });
 
-    if (error) {
-      console.error('[Voice Note Upload Error]:', {
-        message: error.message,
-        code: (error as any)?.code || (error as any)?.statusCode,
-        details: (error as any)?.details || error.message,
-        error,
-      });
-      emitAppToast(`Failed to upload voice note: ${error.message || 'Storage error'}`, 'error');
-      throw error;
-    }
+      if (error) {
+        console.error('[Voice Note Upload Error]:', error);
+        throw error;
+      }
 
-    const { data: publicData } = supabase.storage.from('audio').getPublicUrl(data.path);
-    if (!publicData?.publicUrl) {
-      const err = new Error('Failed to obtain public URL from audio bucket');
-      console.error('[Voice Note Upload Error]:', err);
-      emitAppToast('Failed to obtain voice note URL', 'error');
-      throw err;
-    }
-    return publicData.publicUrl;
-  } catch (err: any) {
-    console.error('[Voice Note Upload Exception]:', {
-      message: err?.message || err,
-      code: err?.code || err?.statusCode,
-      details: err?.details || err?.message,
-      err,
-    });
-    if (!err?.message?.includes('Failed to upload voice note')) {
-      emitAppToast(err?.message ? `Failed to upload voice note: ${err.message}` : 'Failed to upload voice note. Please try again.', 'error');
-    }
-    throw err;
+      const { data: publicData } = supabase.storage.from('audio').getPublicUrl(data.path);
+      if (!publicData?.publicUrl) {
+        throw new Error('Failed to obtain audio URL');
+      }
+      return publicData.publicUrl;
+    }, 2);
+  } catch (err: unknown) {
+    const friendly = getFriendlyError(err, 'voice');
+    emitAppToast(friendly, 'error');
+    throw new Error(friendly);
   }
 }
 
@@ -1769,6 +1747,8 @@ import {
   StaffRole,
   AdminActionLog,
   AppUser,
+  UserRole,
+  StudentLevel,
 } from '../types';
 
 // Pure Supabase Hub Pages, Members, Posts, Reports & Chat Services
@@ -2827,5 +2807,61 @@ export async function deleteSnapFromSupabase(snapId: string, mediaUrl?: string):
     return { success: true };
   } catch (err: any) {
     return { success: false, error: err?.message || 'Failed to delete snap.' };
+  }
+}
+
+// ==============================================================
+// 4. FETCH USER PROFILE BY ID HELPER
+// ==============================================================
+export async function fetchUserProfileByIdFromSupabase(userId: string): Promise<AppUser | null> {
+  if (!isSupabaseConfigured || !userId) return null;
+
+  try {
+    const { data: profile, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (error || !profile) {
+      if (error && error.code !== 'PGRST116') {
+        console.warn('[fetchUserProfileByIdFromSupabase error]:', error.message);
+      }
+      return null;
+    }
+
+    const resolvedUser: AppUser = {
+      id: profile.id,
+      email: profile.email || '',
+      fullName: profile.full_name || 'Campus Student',
+      username: profile.username || profile.email?.split('@')[0] || `student_${profile.id.slice(0, 5)}`,
+      matricNumber: profile.matric_number || profile.email?.split('@')[0],
+      role: (profile.role as UserRole) || 'student',
+      accountType: (profile.account_type as any) || 'BUYER',
+      university: profile.university || '',
+      session: profile.session || '',
+      faculty: profile.faculty,
+      department: profile.department,
+      level: (profile.level as StudentLevel) || '300L',
+      hostelLocation: profile.hostel_location,
+      whatsapp: profile.whatsapp,
+      isVerified: Boolean(profile.is_verified),
+      isAdmin: Boolean(profile.is_admin || profile.role === 'admin' || profile.staff_role),
+      staffRole: (profile.staff_role as any) || (profile.role === 'admin' || profile.is_admin ? 'super_admin' : null),
+      verifiedAt: profile.verified_at,
+      avatarUrl: profile.avatar_url,
+      bio: profile.bio,
+      postsCount: profile.posts_count || 0,
+      followersCount: profile.followers_count || 0,
+      followingCount: profile.following_count || 0,
+      followingUserIds: profile.following_user_ids || [],
+      blockedUserIds: profile.blocked_user_ids || [],
+      joinedAt: profile.created_at || new Date().toISOString(),
+    };
+
+    return resolvedUser;
+  } catch (err) {
+    console.warn('[fetchUserProfileByIdFromSupabase exception]:', err);
+    return null;
   }
 }

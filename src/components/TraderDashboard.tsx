@@ -43,6 +43,8 @@ import {
   isSupabaseConfigured,
   mapMarketplaceError
 } from '../services/marketplace';
+import { getFriendlyError } from '../utils/friendlyErrors';
+import { FriendlyAlert } from './FriendlyAlert';
 import { useAuth } from '../context/AuthContext';
 import { useMarketplaceChat } from '../context/MarketplaceChatContext';
 
@@ -440,12 +442,17 @@ export const TraderDashboard: React.FC<TraderDashboardProps> = ({
 
       {/* Global Error Banner */}
       {errorMessage && (
-        <div className="p-3.5 rounded-2xl bg-rose-500/20 border border-rose-500/40 text-rose-300 text-xs flex items-center justify-between">
-          <span>{errorMessage}</span>
-          <button type="button" onClick={() => setErrorMessage(null)} className="p-1 hover:text-white">
-            <X className="w-4 h-4" />
-          </button>
-        </div>
+        <FriendlyAlert
+          message={errorMessage}
+          onRetry={() => {
+            loadStats();
+            loadOrders();
+            loadProducts();
+          }}
+          onDismiss={() => setErrorMessage(null)}
+          variant="warning"
+          isRetrying={isLoadingStats || isLoadingOrders || isLoadingProducts}
+        />
       )}
 
       {/* Navigation Tabs (4 Tabs) */}

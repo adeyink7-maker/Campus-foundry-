@@ -16,6 +16,7 @@ import {
 import { useMarketplaceChat } from '../context/MarketplaceChatContext';
 import { useAuth } from '../context/AuthContext';
 import { isSupabaseConfigured } from '../services/marketplace';
+import { getFriendlyError } from '../utils/friendlyErrors';
 
 export const MarketplaceChatDrawer: React.FC = () => {
   const { 
@@ -64,8 +65,7 @@ export const MarketplaceChatDrawer: React.FC = () => {
     try {
       await sendMessage(textToSend);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Failed to send message';
-      setErrorToast(msg);
+      setErrorToast(getFriendlyError(err, 'marketplace'));
       setInputText(textToSend);
     } finally {
       setIsSending(false);

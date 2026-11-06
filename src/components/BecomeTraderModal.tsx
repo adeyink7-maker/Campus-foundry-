@@ -19,6 +19,8 @@ import { useAuth, TraderElevationData } from '../context/AuthContext';
 import { ALL_UNILORIN_HOSTELS } from '../data/mockData';
 import { StudentBusiness } from '../types';
 import { supabase, isSupabaseConfigured } from '../services/supabase';
+import { getFriendlyError } from '../utils/friendlyErrors';
+import { FriendlyAlert } from './FriendlyAlert';
 
 interface BecomeTraderModalProps {
   isOpen: boolean;
@@ -127,8 +129,8 @@ export const BecomeTraderModal = ({
     reader.readAsDataURL(file);
   };
 
-  const handleSubmit = async (e: FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (e?: FormEvent) => {
+    if (e) e.preventDefault();
     setErrorMessage(null);
 
     if (!brandName.trim()) {
@@ -170,8 +172,8 @@ export const BecomeTraderModal = ({
       const result = await elevateToTrader(elevationData);
       onElevated(result.business);
       onClose();
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to elevate account. Please try again.');
+    } catch (err: unknown) {
+      setErrorMessage(getFriendlyError(err, 'store'));
     } finally {
       setIsSubmitting(false);
     }
@@ -211,9 +213,13 @@ export const BecomeTraderModal = ({
           {/* Part 2: Middle Scrollable Body */}
           <div className="flex-1 min-h-0 overflow-y-auto p-5 sm:p-6 space-y-4 overscroll-contain">
             {errorMessage && (
-              <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-xs text-rose-300">
-                {errorMessage}
-              </div>
+              <FriendlyAlert
+                message={errorMessage}
+                onRetry={() => handleSubmit()}
+                onDismiss={() => setErrorMessage(null)}
+                variant="warning"
+                isRetrying={isSubmitting}
+              />
             )}
 
             {/* Value Prop Highlight */}

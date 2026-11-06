@@ -1,4 +1,5 @@
 import { supabase, isSupabaseConfigured, isMockConversation, isValidUuid, toSafeUuid, emitAppToast } from './supabase';
+import { getFriendlyError } from '../utils/friendlyErrors';
 export { isSupabaseConfigured };
 import { 
   Product, 
@@ -26,83 +27,7 @@ export function formatNaira(amount: number | null | undefined): string {
  * Friendly error messages mapped from Supabase backend codes / RPC exceptions
  */
 export function mapMarketplaceError(err: unknown): string {
-  if (!err) return 'Something went wrong. Please try again.';
-  
-  let raw = '';
-  if (typeof err === 'string') {
-    raw = err;
-  } else if (typeof err === 'object' && err !== null) {
-    const errorObj = err as { message?: string; details?: string; hint?: string; code?: string; error?: string };
-    raw = errorObj.error || errorObj.message || errorObj.details || '';
-  }
-
-  const msg = raw.toLowerCase().trim();
-
-  if (msg.includes('not_authenticated') || msg.includes('jwt') || msg.includes('unauthorized')) {
-    return 'Please sign in to place your order.';
-  }
-  if (msg.includes('empty_order')) {
-    return 'Your order is empty. Please add items to your cart.';
-  }
-  if (msg.includes('too_many_items')) {
-    return 'This order contains too many items. Please split your order.';
-  }
-  if (msg.includes('payment_method_unavailable')) {
-    return 'The selected payment method is currently unavailable.';
-  }
-  if (msg.includes('address_required')) {
-    return 'Delivery address is required (at least 3 characters).';
-  }
-  if (msg.includes('business_not_found')) {
-    return 'This store could not be found.';
-  }
-  if (msg.includes('cannot_order_own_business') || msg.includes('cannot_message_own_business')) {
-    return 'This is your own store';
-  }
-  if (msg.includes('blocked_by_trader')) {
-    return 'You cannot place an order with this store.';
-  }
-  if (msg.includes('profile_not_found')) {
-    return 'Student profile not found. Please complete your profile first.';
-  }
-  if (msg.includes('invalid_quantity')) {
-    return 'Invalid quantity specified for an item.';
-  }
-  if (msg.includes('product_unavailable')) {
-    return 'An item is no longer available.';
-  }
-  if (msg.startsWith('insufficient_stock') || msg.includes('insufficient_stock')) {
-    const parts = raw.split(/[:\-]/);
-    if (parts.length > 1 && parts[1].trim()) {
-      return `Insufficient stock: ${parts[1].trim()} does not have enough stock available.`;
-    }
-    return 'An item in your cart has insufficient stock available.';
-  }
-  if (msg.includes('order_not_found')) {
-    return 'Order was not found in the campus registry.';
-  }
-  if (msg.includes('order_closed')) {
-    return 'This order has already been closed or finalized.';
-  }
-  if (msg.includes('transition_not_allowed')) {
-    return 'This status change is not allowed at the current stage.';
-  }
-  if (msg.includes('pin_locked')) {
-    return 'Too many wrong PIN attempts. Order verification locked for 15 minutes.';
-  }
-  if (msg.includes('wrong_delivery_pin')) {
-    return 'That PIN is not correct. Please confirm with the buyer.';
-  }
-  if (msg.includes('conversation_not_found')) {
-    return 'Marketplace conversation thread was not found.';
-  }
-  if (msg.includes('permission denied') || msg.includes('42501')) {
-    return 'Database permission notice: Your account does not currently have permission for this action.';
-  }
-
-  // Unknown errors show "Something went wrong. Please try again." and log the original to the console
-  console.error('[Marketplace Error]:', err);
-  return 'Something went wrong. Please try again.';
+  return getFriendlyError(err, 'marketplace');
 }
 
 // ==========================================
@@ -1378,7 +1303,7 @@ export async function sendMessage(
       hint: error.hint,
       payload,
     });
-    emitAppToast(`Save failed: ${error.message || 'Database error'}`, 'error');
+    emitAppToast(getFriendlyError(error, 'marketplace'), 'error');
     throw new Error(mapMarketplaceError(error));
   }
 

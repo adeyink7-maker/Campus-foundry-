@@ -15,6 +15,7 @@ import { useAuth } from '../context/AuthContext';
 import { LiveCameraModal } from './LiveCameraModal';
 import { compressImageFile, dataUrlToBlob } from '../utils/imageOptimizer';
 import { uploadMedia, emitAppToast, generateVoiceUuid } from '../services/supabase';
+import { getFriendlyError } from '../utils/friendlyErrors';
 
 interface CreatePostModalProps {
   isOpen: boolean;
@@ -232,10 +233,9 @@ export const CreatePostModal = ({
       setSelectedFile(null);
       setLocationTag('');
       onClose();
-    } catch (err: any) {
-      // LAUNCH POLISH: Log errors safely and provide user feedback
+    } catch (err: unknown) {
       console.error('[CreatePostModal Submit Error]:', err);
-      emitAppToast(err?.message ? `Failed to publish post: ${err.message}` : 'Failed to publish post. Please try again.', 'error');
+      emitAppToast(getFriendlyError(err, 'post'), 'error');
     } finally {
       setIsSubmitting(false);
     }

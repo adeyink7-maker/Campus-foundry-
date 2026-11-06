@@ -651,7 +651,7 @@ export const PlayerCardOverlay: React.FC<PlayerCardOverlayProps> = ({ onOpenProf
                 {/* TAB 3: PORTFOLIO & REPOSITORIES */}
                 {activeTab === 'portfolio' && (
                   <div className="space-y-3 mt-2">
-                    {cardData?.settings.portfolioLinks && cardData.settings.portfolioLinks.length > 0 ? (
+                    {cardData?.settings?.portfolioLinks && cardData.settings.portfolioLinks.length > 0 ? (
                       cardData.settings.portfolioLinks.map((link, i) => (
                         <a
                           key={i}

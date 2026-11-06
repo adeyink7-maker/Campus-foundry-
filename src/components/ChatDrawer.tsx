@@ -37,6 +37,7 @@ import { useMarketplaceChat } from '../context/MarketplaceChatContext';
 import { useAuth } from '../context/AuthContext';
 import { ChatThemeMode } from '../types';
 import { uploadVoiceNoteAudio, getPlayableAudioUrl } from '../services/supabase';
+import { getFriendlyError } from '../utils/friendlyErrors';
 
 export type ChatScreenRatio = 'standard' | 'wide' | 'compact';
 
@@ -190,9 +191,9 @@ export const ChatDrawer = () => {
     try {
       await sendMessage(textToSend, options);
       scrollToLatest();
-    } catch (err: any) {
-      console.error('[Send Message Error]:', err?.message || err);
-      showToast(`Failed to send message: ${err?.message || 'Database error'}`);
+    } catch (err: unknown) {
+      console.error('[Send Message Error]:', err);
+      showToast(getFriendlyError(err, 'dm'));
     }
   };
 
@@ -313,8 +314,9 @@ export const ChatDrawer = () => {
         replyTo: replyingTo || undefined,
       });
       scrollToLatest();
-    } catch (err: any) {
-      showToast(err?.message ? `Failed to send voice note: ${err.message}` : 'Failed to send voice note.');
+    } catch (err: unknown) {
+      console.error('[Send Voice Note Error]:', err);
+      showToast(getFriendlyError(err, 'voice'));
     } finally {
       setIsUploadingVoice(false);
       setIsRecordingVoice(false);
