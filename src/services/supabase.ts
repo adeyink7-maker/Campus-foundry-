@@ -1,5 +1,5 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { CampusPost, CampusSnap, StudentBusiness, CampusComment, ChatConversation, ChatMessage } from '../types';
+import { CampusPost, CampusSnap, StudentBusiness, CampusComment, ChatConversation, ChatMessage, SnapViewerRecord } from '../types';
 import { getFriendlyError, withNetworkRetry } from '../utils/friendlyErrors';
 
 /**
@@ -148,7 +148,8 @@ export function formatSupabaseErrorMessage(err: any, defaultMessage = 'An unexpe
     ? err 
     : err.message || err.error_description || (err.error?.message ?? '');
 
-  const lower = (rawMsg || '').toLowerCase();
+  if (!rawMsg) return defaultMessage;
+  const lower = rawMsg.toLowerCase();
 
   // Network / Ad-Blocker / Firewall interception
   if (
@@ -159,20 +160,16 @@ export function formatSupabaseErrorMessage(err: any, defaultMessage = 'An unexpe
     lower.includes('connection refused') ||
     lower.includes('err_blocked_by_client')
   ) {
-    return 'Unable to reach the Supabase backend server ("Failed to fetch"). Please verify your VITE_SUPABASE_URL (e.g. https://<project-ref>.supabase.co) and ensure no ad-blocker or firewall is blocking requests.';
-  }
-
-  // Email provider / SMTP configuration issue
-  if (lower.includes('confirmation email') || lower.includes('error sending')) {
-    return 'Supabase project email provider error. Please configure custom SMTP in Supabase Dashboard (Authentication > Email Settings). Verification has been routed through the UNILORIN Student Gateway.';
+    return 'Unable to reach the Supabase backend server ("Failed to fetch"). Please verify your project URL and ensure no ad-blocker or firewall is blocking requests.';
   }
 
   // Credential configuration issues
   if (lower.includes('invalid api key') || lower.includes('jwt') || lower.includes('apikey') || lower.includes('unauthorized')) {
-    return 'Supabase authentication failed: Invalid API credentials. Please verify your VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in .env.';
+    return 'Supabase authentication failed: Invalid API credentials. Please verify your credentials in .env.';
   }
 
-  return rawMsg || defaultMessage;
+  // Return the real error message as requested
+  return rawMsg;
 }
 
 /**
@@ -828,9 +825,6 @@ export async function createCampusPostInSupabase(post: CampusPost): Promise<Camp
     media_url: post.mediaUrl || null,
     media_type: post.mediaType || (post.mediaUrl ? 'image' : null),
     location_tag: post.locationTag,
-    likes_count: post.likesCount || 0,
-    comments_count: post.commentsCount || 0,
-    reactions: post.reactions || null,
     pinned: Boolean(post.pinned),
     created_at: post.createdAt || new Date().toISOString(),
   };
@@ -953,15 +947,56 @@ export async function deletePostsByUserInSupabase(usernameOrQuery: string): Prom
   }
 }
 
-export async function toggleCampusPostLikeInSupabase(postId: string, newLikesCount: number): Promise<void> {
+export async function toggleCampusPostLikeInSupabase(postId: string, reaction: string = 'heart'): Promise<void> {
   if (!isSupabaseConfigured) return;
   try {
-    const { error } = await supabase.from('campus_posts').update({ likes_count: newLikesCount }).eq('id', postId);
-    if (error) {
-      console.error('[Supabase toggleCampusPostLike Error]:', error);
+    const { data: { session } } = await supabase.auth.getSession();
+    const userId = session?.user?.id;
+    if (!userId) return;
+
+    // Check if reaction already exists
+    const { data: existing } = await supabase
+      .from('post_reactions')
+      .select('id')
+      .eq('post_id', postId)
+      .eq('user_id', userId)
+      .eq('reaction', reaction)
+      .maybeSingle();
+
+    if (existing) {
+      // Delete if exists (toggle off)
+      await supabase.from('post_reactions').delete().eq('id', existing.id);
+    } else {
+      // Insert if not exists (toggle on)
+      await supabase.from('post_reactions').insert({
+        post_id: postId,
+        user_id: userId,
+        reaction: reaction
+      });
     }
   } catch (err: any) {
-    console.error('[Supabase toggleCampusPostLike Exception]:', err?.message || err);
+    console.error('[Supabase togglePostReaction Exception]:', err?.message || err);
+  }
+}
+
+/**
+ * Trader calls this RPC to confirm delivery using the buyer's PIN.
+ */
+export async function confirmDeliveryRPC(orderId: string, pin: string): Promise<boolean> {
+  if (!isSupabaseConfigured) return false;
+  try {
+    const { data, error } = await supabase.rpc('confirm_delivery', {
+      p_order: orderId,
+      p_pin: pin
+    });
+    if (error) {
+      console.error('[Supabase confirmDeliveryRPC Error]:', error);
+      throw error;
+    }
+    return !!data;
+  } catch (err: any) {
+    console.error('[Supabase confirmDeliveryRPC Exception]:', err);
+    throw err;
   }
 }
 
@@ -1135,24 +1170,28 @@ export async function fetchCampusSnapsFromSupabase(): Promise<CampusSnap[]> {
       return [];
     }
 
-    return (data || []).map((row: any) => ({
-      id: row.id,
-      authorId: row.author_id,
-      authorName: row.author_name,
-      authorUsername: row.author_username,
-      authorAvatar: row.author_avatar,
-      authorDept: row.author_dept,
-      authorLevel: row.author_level,
-      locationTag: row.location_tag,
-      mediaUrl: row.media_url,
-      mediaType: row.media_type,
-      caption: row.caption || '',
-      createdAt: row.created_at,
-      expiresAt: row.expires_at,
-      expiresInHours: row.expires_in_hours || 24,
-      viewsCount: row.views_count || 0,
-      stickers: row.stickers || [],
-    }));
+    return (data || []).map((row: any) => {
+      const realViewsCount = row.views_count || 0;
+
+      return {
+        id: row.id,
+        authorId: row.author_id,
+        authorName: row.author_name,
+        authorUsername: row.author_username,
+        authorAvatar: row.author_avatar,
+        authorDept: row.author_dept,
+        authorLevel: row.author_level,
+        locationTag: row.location_tag,
+        mediaUrl: row.media_url,
+        mediaType: row.media_type,
+        caption: row.caption || '',
+        createdAt: row.created_at,
+        expiresAt: row.expires_at,
+        expiresInHours: row.expires_in_hours || 24,
+        viewsCount: realViewsCount,
+        stickers: row.stickers || [],
+      };
+    });
   } catch (err: any) {
     console.error('[Supabase fetchCampusSnaps Exception]:', err?.message || err);
     return [];
@@ -1194,7 +1233,6 @@ export async function createCampusSnapInSupabase(snap: CampusSnap): Promise<Camp
     caption: snap.caption || '',
     created_at: snap.createdAt || new Date().toISOString(),
     expires_in_hours: snap.expiresInHours || 24,
-    views_count: snap.viewsCount || 0,
     stickers: snap.stickers || [],
   };
 
@@ -1240,10 +1278,19 @@ export async function createCampusSnapInSupabase(snap: CampusSnap): Promise<Camp
   }
 }
 
-
-export async function deleteCampusSnapInSupabase(snapId: string): Promise<void> {
+export async function deleteCampusSnapInSupabase(snapId: string, mediaUrl?: string): Promise<void> {
   if (!isSupabaseConfigured) return;
   try {
+    if (mediaUrl && mediaUrl.includes('/storage/v1/object/public/media/')) {
+      const parts = mediaUrl.split('/storage/v1/object/public/media/');
+      if (parts[1]) {
+        const filePath = decodeURIComponent(parts[1].split('?')[0]);
+        await supabase.storage.from('media').remove([filePath]).catch((storageErr) => {
+          console.warn('[Supabase Storage Delete Notice]:', storageErr);
+        });
+      }
+    }
+
     let { error } = await supabase.from('campus_snaps').delete().eq('id', snapId);
     if (error && (error.code === '42P01' || error.message?.includes('does not exist'))) {
       const fallback = await supabase.from('campus_snap').delete().eq('id', snapId);
@@ -1251,9 +1298,11 @@ export async function deleteCampusSnapInSupabase(snapId: string): Promise<void> 
     }
     if (error) {
       console.error('[Supabase deleteCampusSnap Error]:', error);
+      throw error;
     }
   } catch (err: any) {
     console.error('[Supabase deleteCampusSnap Exception]:', err);
+    throw err;
   }
 }
 
@@ -1280,6 +1329,135 @@ export async function purgeExpiredCampusSnapsInSupabase(): Promise<void> {
     }
   } catch (err: any) {
     console.error('[Supabase purgeExpiredCampusSnaps Exception]:', err);
+  }
+}
+
+function formatSnapViewTime(iso: string): string {
+  if (!iso) return 'Recently';
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  if (diffMins < 1) return 'Just now';
+  if (diffMins < 60) return `${diffMins}m ago`;
+  const diffHours = Math.floor(diffMins / 60);
+  if (diffHours < 24) return `${diffHours}h ago`;
+  return `${Math.floor(diffHours / 24)}d ago`;
+}
+
+/**
+ * Records a snap view in snap_views table.
+ * Unique constraint on (snap_id, viewer_id) ignores duplicate views.
+ * Author's own views are ignored.
+ */
+export async function recordSnapView(
+  snapId: string,
+  viewerId?: string | null,
+  authorId?: string | null
+): Promise<number> {
+  if (!snapId || !viewerId) return 0;
+  if (viewerId === authorId || viewerId === 'usr_me' || viewerId === 'guest') return 0;
+
+  const safeSnapId = isValidUuid(snapId) ? snapId : toSafeUuid(snapId);
+  const safeViewerId = isValidUuid(viewerId) ? viewerId : toSafeUuid(viewerId);
+
+  if (!isSupabaseConfigured) {
+    try {
+      const storedKey = `snap_views_${safeSnapId}`;
+      const existing: string[] = JSON.parse(localStorage.getItem(storedKey) || '[]');
+      if (!existing.includes(safeViewerId)) {
+        existing.push(safeViewerId);
+        localStorage.setItem(storedKey, JSON.stringify(existing));
+      }
+      return existing.length;
+    } catch {
+      return 1;
+    }
+  }
+
+  try {
+    const { error: insertErr } = await supabase
+      .from('snap_views')
+      .insert({ snap_id: safeSnapId, viewer_id: safeViewerId });
+
+    if (insertErr && insertErr.code !== '23505') {
+      console.warn('[Supabase recordSnapView Notice]:', insertErr.message);
+    }
+
+    const { count } = await supabase
+      .from('snap_views')
+      .select('*', { count: 'exact', head: true })
+      .eq('snap_id', safeSnapId);
+
+    const totalViews = count || 0;
+    if (totalViews > 0) {
+      await supabase.from('campus_snaps').update({ views_count: totalViews }).eq('id', safeSnapId);
+    }
+    return totalViews;
+  } catch (err: any) {
+    console.warn('[Supabase recordSnapView Exception]:', err?.message || err);
+    return 0;
+  }
+}
+
+/**
+ * Fetches real viewer records and count for a snap from snap_views + profiles.
+ */
+export async function fetchSnapViewers(
+  snapId: string
+): Promise<{ count: number; viewers: SnapViewerRecord[] }> {
+  if (!snapId) return { count: 0, viewers: [] };
+  const safeSnapId = isValidUuid(snapId) ? snapId : toSafeUuid(snapId);
+
+  if (!isSupabaseConfigured) {
+    try {
+      const storedKey = `snap_views_${safeSnapId}`;
+      const existing: string[] = JSON.parse(localStorage.getItem(storedKey) || '[]');
+      return {
+        count: existing.length,
+        viewers: existing.map((id, idx) => ({
+          id,
+          name: `Campus Viewer ${idx + 1}`,
+          avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100',
+          dept: 'UNILORIN Student',
+          viewedAt: 'Recently',
+        })),
+      };
+    } catch {
+      return { count: 0, viewers: [] };
+    }
+  }
+
+  try {
+    const { data, count, error } = await supabase
+      .from('snap_views')
+      .select('viewed_at, viewer_id, profiles(id, full_name, username, avatar_url, department, level)', { count: 'exact' })
+      .eq('snap_id', safeSnapId)
+      .order('viewed_at', { ascending: false });
+
+    if (error) {
+      console.warn('[Supabase fetchSnapViewers Notice]:', error.message);
+      return { count: 0, viewers: [] };
+    }
+
+    const viewers: SnapViewerRecord[] = (data || []).map((row: any) => {
+      const p = row.profiles || {};
+      const deptStr = p.department ? `${p.department}${p.level ? ` (${p.level})` : ''}` : 'UNILORIN Student';
+      return {
+        id: p.id || row.viewer_id,
+        name: p.full_name || 'Campus Student',
+        username: p.username ? `@${p.username}` : undefined,
+        avatarUrl: p.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100',
+        dept: deptStr,
+        viewedAt: formatSnapViewTime(row.viewed_at),
+      };
+    });
+
+    return {
+      count: count ?? viewers.length,
+      viewers,
+    };
+  } catch (err: any) {
+    console.warn('[Supabase fetchSnapViewers Exception]:', err?.message || err);
+    return { count: 0, viewers: [] };
   }
 }
 

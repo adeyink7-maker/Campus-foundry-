@@ -31,6 +31,7 @@ import {
   mapMarketplaceError,
   fetchTraderOrders,
   updateOrderStatus,
+  confirmDelivery,
   fetchDashboardStats,
   subscribeToTraderOrders
 } from '../services/marketplace';
@@ -326,30 +327,10 @@ export const MyStoreModal: React.FC<MyStoreModalProps> = ({
       setPinError(null);
       setAttemptsLeftMsg(null);
 
-      const result = await updateOrderStatus({
-        orderId: pinModalOrder.id,
-        status: 'delivered',
-        pin: deliveryPinInput.trim(),
-      });
+      const success = await confirmDelivery(pinModalOrder.id, deliveryPinInput.trim());
 
-      if (!result.ok) {
-        if (result.error === 'wrong_delivery_pin') {
-          const tries = result.attemptsLeft != null ? ` (${result.attemptsLeft} attempts left)` : '';
-          setPinError(`That PIN is not correct. Please confirm with the buyer.`);
-          setAttemptsLeftMsg(tries);
-        } else if (result.error === 'pin_locked') {
-          setPinError('Too many wrong attempts. Try again in 15 minutes.');
-        } else if (result.error === 'transition_not_allowed') {
-          setPinError('This status change is not allowed at the current stage.');
-        } else if (result.error === 'order_closed') {
-          setPinError('This order has already been closed or finalized.');
-        } else if (result.error === 'order_not_found') {
-          setPinError('Order was not found.');
-        } else if (result.error === 'not_authenticated') {
-          setPinError('Please sign in as the store trader.');
-        } else {
-          setPinError(mapMarketplaceError(result.error));
-        }
+      if (!success) {
+        setPinError(`That PIN is not correct. Please confirm with the buyer.`);
         return;
       }
 

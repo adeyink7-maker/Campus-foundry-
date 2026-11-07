@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
-import { supabase, isSupabaseConfigured } from '../services/supabase';
+import { supabase, isSupabaseConfigured, emitAppToast } from '../services/supabase';
+import { getFriendlyError } from '../utils/friendlyErrors';
 import { AppUser, UserRole, AccountType, TraderProfile, StudentBusiness, StudentLevel } from '../types';
 import { 
   requestStudentEmailOTP, 
@@ -131,6 +132,45 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       const userEmail = session?.user?.email || profile?.email || '';
 
       if (profile) {
+        let followersCount = 0;
+        let followingCount = 0;
+        let followingUserIds: string[] = [];
+
+        if (isSupabaseConfigured) {
+          try {
+            let retryCount = 0;
+            const maxRetries = 2;
+            let followersRes: any;
+            let followingRes: any;
+            let followingRowsRes: any;
+
+            while (retryCount <= maxRetries) {
+              [followersRes, followingRes, followingRowsRes] = await Promise.all([
+                supabase.from('follows').select('*', { count: 'exact', head: true }).eq('following_id', profile.id),
+                supabase.from('follows').select('*', { count: 'exact', head: true }).eq('follower_id', profile.id),
+                supabase.from('follows').select('following_id').eq('follower_id', profile.id),
+              ]);
+
+              if (followersRes.error || followingRes.error || followingRowsRes.error) {
+                const error = followersRes.error || followingRes.error || followingRowsRes.error;
+                if (error.code === 'PGRST205' && retryCount < maxRetries) {
+                  retryCount++;
+                  console.warn(`[Supabase Schema Cache Notice]: Table 'follows' not found in cache. Retrying in ${500 * retryCount}ms...`);
+                  await new Promise((r) => setTimeout(r, 500 * retryCount));
+                  continue;
+                }
+                throw error;
+              }
+              break;
+            }
+            followersCount = followersRes.count ?? 0;
+            followingCount = followingRes.count ?? 0;
+            followingUserIds = (followingRowsRes.data || []).map((r: any) => r.following_id);
+          } catch (err) {
+            console.warn('[Supabase] Failed to compute follows counts:', err);
+          }
+        }
+
         const mappedUser: AppUser = {
           id: profile.id,
           email: profile.email || userEmail,
@@ -153,9 +193,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           avatarUrl: profile.avatar_url,
           bio: profile.bio,
           postsCount: profile.posts_count || 0,
-          followersCount: profile.followers_count || 0,
-          followingCount: profile.following_count || 0,
-          followingUserIds: profile.following_user_ids || [],
+          followersCount,
+          followingCount,
+          followingUserIds,
           blockedUserIds: profile.blocked_user_ids || [],
           joinedAt: profile.created_at || new Date().toISOString(),
         };
@@ -353,8 +393,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     return { user: elevatedUser, business: newBusiness };
   };
 
-  const toggleFollowUser = (targetUserId: string) => {
+  const toggleFollowUser = async (targetUserId: string) => {
     if (!currentUser) return;
+    const previousUser = { ...currentUser };
     const currentFollowing = currentUser.followingUserIds || [];
     const isFollowing = currentFollowing.includes(targetUserId);
 
@@ -371,12 +412,46 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setCurrentUser(updatedUser);
 
     if (isSupabaseConfigured) {
-      Promise.resolve(
-        supabase.from('profiles').update({
-          following_user_ids: updatedFollowing,
-          following_count: updatedUser.followingCount,
-        }).eq('id', currentUser.id)
-      ).catch(() => {});
+      try {
+        let retryCount = 0;
+        const maxRetries = 2;
+
+        while (retryCount <= maxRetries) {
+          let error: any;
+          if (isFollowing) {
+            const res = await supabase
+              .from('follows')
+              .delete()
+              .eq('follower_id', currentUser.id)
+              .eq('following_id', targetUserId);
+            error = res.error;
+          } else {
+            const res = await supabase
+              .from('follows')
+              .insert({
+                follower_id: currentUser.id,
+                following_id: targetUserId,
+              });
+            error = res.error;
+          }
+
+          if (error) {
+            if (error.code === 'PGRST205' && retryCount < maxRetries) {
+              retryCount++;
+              console.warn(`[Supabase Schema Cache Notice]: Table 'follows' not found in cache. Retrying in ${500 * retryCount}ms...`);
+              await new Promise((r) => setTimeout(r, 500 * retryCount));
+              continue;
+            }
+            throw error;
+          }
+          break;
+        }
+      } catch (err: any) {
+        setCurrentUser(previousUser);
+        console.error('[Follow Error]:', err);
+        const friendly = getFriendlyError(err, 'follow');
+        emitAppToast(friendly, 'error');
+      }
     }
   };
 

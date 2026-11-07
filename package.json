@@ -16,6 +16,7 @@
     "@nozbe/watermelondb": "^0.28.0",
     "@react-native-community/netinfo": "^12.0.1",
     "@supabase/supabase-js": "^2.118.0",
+    "@types/react-router-dom": "^5.3.3",
     "clsx": "^2.1.1",
     "express": "^5.2.1",
     "framer-motion": "^13.5.0",
@@ -31,6 +32,7 @@
     "react-native-screen-capture": "^0.2.3",
     "react-native-video": "^6.19.3",
     "react-native-web": "^0.21.3",
+    "react-router-dom": "^7.18.5",
     "tailwind-merge": "^3.5.0",
     "uuid": "^14.0.2",
     "ws": "^8.22.0"

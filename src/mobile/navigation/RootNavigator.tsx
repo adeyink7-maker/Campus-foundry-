@@ -11,7 +11,8 @@
  * - 📱 Device Frame Toggle (Phone Frame vs Edge-to-Edge Fullscreen vs Web view)
  */
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { fetchUserProfileByIdFromSupabase } from '../../services/supabase';
 import { 
   Sparkles, 
@@ -88,6 +89,8 @@ import { CampusMapView } from '../../components/CampusMapView';
 import { PostCard } from '../../components/PostCard';
 import { BusinessCard } from '../../components/BusinessCard';
 import { MyStoreModal } from '../../components/MyStoreModal';
+import { ProfileAvatarSheet } from '../../components/ProfileAvatarSheet';
+import { uploadMedia } from '../../services/supabase';
 
 export type MobileTab = 'feed' | 'market' | 'campus' | 'chats' | 'profile';
 export type CampusSubHub = 'politics' | 'academics' | 'clubs' | 'news' | 'map' | 'idcard' | null;
@@ -112,7 +115,7 @@ export interface RootNavigatorProps {
   onUpdateBusiness?: (updated: StudentBusiness) => void;
   onOpenTraderProfile?: (business: StudentBusiness) => void;
   onOpenAuth?: (mode?: 'signin' | 'signup' | 'unilorin-otp', role?: UserRole) => void;
-  showToast?: (msg: string) => void;
+  showToast?: (msg: string, type?: 'error' | 'success' | 'info') => void;
   onSwitchToWeb?: () => void;
   onViewUserProfile?: (authorId?: string, authorDetails?: any) => void;
   targetProfileUser?: AppUser | null;
@@ -121,6 +124,12 @@ export interface RootNavigatorProps {
   businessesError?: string | null;
   onRetryBusinesses?: () => void;
   onOpenAdminPages?: () => void;
+  isLoadingPosts?: boolean;
+  postsError?: string | null;
+  onRetryPosts?: () => void;
+  isLoadingSnaps?: boolean;
+  snapsError?: string | null;
+  onRetrySnaps?: () => void;
 }
 
 export const RootNavigator: React.FC<RootNavigatorProps> = ({
@@ -152,56 +161,79 @@ export const RootNavigator: React.FC<RootNavigatorProps> = ({
   businessesError = null,
   onRetryBusinesses,
   onOpenAdminPages,
+  isLoadingPosts = false,
+  postsError = null,
+  onRetryPosts,
+  isLoadingSnaps = false,
+  snapsError = null,
+  onRetrySnaps,
 }) => {
-  const { currentUser, signOut, toggleFollowUser } = useAuth();
+  const { currentUser, signOut, toggleFollowUser, updateUser } = useAuth();
   const { totalItemCount, setIsCartOpen } = useCart();
   const { unreadTotalCount, pendingRequestsCount, conversations, openChatWithBusiness } = useChat();
   const { conversations: marketplaceConversations, openMarketplaceChat } = useMarketplaceChat();
 
-  // Navigation State
-  const [activeTab, setActiveTab] = useState<MobileTab>(() => {
-    if (typeof window !== 'undefined' && window.location.pathname.startsWith('/profile/')) {
-      return 'profile';
-    }
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  const activeTab = useMemo<MobileTab>(() => {
+    if (location.pathname.startsWith('/market')) return 'market';
+    if (location.pathname.startsWith('/hubs') || location.pathname.startsWith('/campus')) return 'campus';
+    if (location.pathname.startsWith('/chats')) return 'chats';
+    if (location.pathname.startsWith('/profile')) return 'profile';
     return 'feed';
-  });
+  }, [location]);
+
   const [viewingProfileUser, setViewingProfileUser] = useState<AppUser | null>(null);
+  const [isProfileLoading, setIsProfileLoading] = useState(false);
+  const [profileError, setProfileError] = useState<string | null>(null);
   const [activeCampusSubHub, setActiveCampusSubHub] = useState<CampusSubHub | null>(null);
 
   const activeProfileUser = targetProfileUser || viewingProfileUser || currentUser;
 
+  const navigateToTab = (tab: MobileTab) => {
+    navigate('/' + tab);
+  };
+
   useEffect(() => {
     if (targetProfileUser) {
-      setActiveTab('profile');
+      navigate('/profile/' + targetProfileUser.id);
     }
-  }, [targetProfileUser]);
+  }, [targetProfileUser, navigate]);
 
   // Listen for /profile/:id route changes
   useEffect(() => {
-    const handleRoute = () => {
-      if (typeof window === 'undefined') return;
-      const path = window.location.pathname;
-      const match = path.match(/^\/profile\/([^/]+)/);
-      if (match) {
-        const userId = match[1];
-        console.log('Navigated to:', path);
-        setActiveTab('profile');
-        if (currentUser && currentUser.id === userId) {
-          setViewingProfileUser(currentUser);
-        } else {
-          fetchUserProfileByIdFromSupabase(userId).then((profile) => {
+    const path = location.pathname;
+    const match = path.match(/^\/profile\/([^/]+)/);
+    if (match) {
+      const userId = match[1];
+      console.log('Navigated to:', path);
+      if (currentUser && currentUser.id === userId) {
+        setViewingProfileUser(currentUser);
+        setProfileError(null);
+      } else {
+        setIsProfileLoading(true);
+        setProfileError(null);
+        fetchUserProfileByIdFromSupabase(userId)
+          .then((profile) => {
             if (profile) {
               setViewingProfileUser(profile);
+            } else {
+              setProfileError("Couldn't load student profile. Tap to retry.");
             }
+          })
+          .catch(() => {
+            setProfileError("Couldn't load student profile. Tap to retry.");
+          })
+          .finally(() => {
+            setIsProfileLoading(false);
           });
-        }
       }
-    };
-
-    handleRoute();
-    window.addEventListener('popstate', handleRoute);
-    return () => window.removeEventListener('popstate', handleRoute);
-  }, [currentUser]);
+    } else {
+      setViewingProfileUser(null);
+      setProfileError(null);
+    }
+  }, [location.pathname, currentUser]);
 
 
   // Quick Action Sheet state (center '+' FAB)
@@ -267,7 +299,54 @@ export const RootNavigator: React.FC<RootNavigatorProps> = ({
         : 'Biometrics disabled.'
     );
   };
+  // Avatar Action Sheet state
+  const [isAvatarSheetOpen, setIsAvatarSheetOpen] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const myActiveSnaps = useMemo(() => {
+    if (!currentUser) return [];
+    return snaps.filter(s => s.authorId === currentUser.id);
+  }, [snaps, currentUser]);
+
+  const handleAvatarClick = () => {
+    setIsAvatarSheetOpen(true);
+  };
+
+  const handlePlusBadgeClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !currentUser) return;
+
+    try {
+      showToast('Uploading new profile photo...');
+      const url = await uploadMedia('avatars', `${currentUser.id}/avatar_${Date.now()}.jpg`, file);
+      await updateUser({ avatarUrl: url });
+      showToast('Profile photo updated!', 'success');
+    } catch (err) {
+      console.error('Avatar upload failed:', err);
+      showToast('Failed to update photo. Try again.', 'error');
+    }
+  };
+
+  const handleRemovePhoto = async () => {
+    if (!currentUser) return;
+    try {
+      await updateUser({ avatarUrl: '' });
+      showToast('Profile photo removed.');
+    } catch (err) {
+      showToast('Failed to remove photo.', 'error');
+    }
+  };
+
+  const handleViewOwnSnap = () => {
+    if (myActiveSnaps.length > 0) {
+      onSelectSnap(myActiveSnaps[0]);
+    }
+  };
   // Filtered Marketplace businesses
   const filteredBusinesses = useMemo(() => {
     return businesses.filter((biz) => {
@@ -375,7 +454,7 @@ export const RootNavigator: React.FC<RootNavigatorProps> = ({
             {/* In-App Direct Messages Trigger */}
             <button
               type="button"
-              onClick={() => setActiveTab('chats')}
+              onClick={() => navigateToTab('chats')}
               className="relative p-2 rounded-xl bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 text-neutral-300 hover:text-white transition-colors"
               title="Open Messages"
             >
@@ -402,25 +481,27 @@ export const RootNavigator: React.FC<RootNavigatorProps> = ({
 
             {/* Profile Avatar / Sign In */}
             {currentUser ? (
-              <button
-                type="button"
-                onClick={() => {
-                  setViewingProfileUser(null);
-                  onClearTargetUser?.();
-                  setActiveTab('profile');
-                  if (typeof window !== 'undefined') {
-                    window.history.pushState({}, '', '/');
-                  }
-                }}
-                className="w-8 h-8 rounded-full border-2 border-amber-500 overflow-hidden shadow-sm cursor-pointer hover:opacity-90 transition-opacity"
-                title="Open My Profile"
-              >
-                <img 
-                  src={currentUser.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100'} 
-                  alt={currentUser.fullName || 'User'} 
-                  className="w-full h-full object-cover" 
-                />
-              </button>
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={handleAvatarClick}
+                  className="w-9 h-9 rounded-full border-2 border-amber-500 overflow-hidden shadow-sm cursor-pointer hover:opacity-90 transition-opacity"
+                  title="Open Photo Options"
+                >
+                  <img 
+                    src={currentUser.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100'} 
+                    alt={currentUser.fullName || 'User'} 
+                    className="w-full h-full object-cover" 
+                  />
+                </button>
+                {/* "+" Badge on Header Avatar */}
+                <button
+                  onClick={handlePlusBadgeClick}
+                  className="absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-emerald-500 text-neutral-950 rounded-full flex items-center justify-center text-[10px] font-black border border-neutral-950 shadow-sm active:scale-110 transition-transform"
+                >
+                  +
+                </button>
+              </div>
             ) : (
               <button
                 type="button"
@@ -457,7 +538,22 @@ export const RootNavigator: React.FC<RootNavigatorProps> = ({
             </div>
 
             {/* Active Campus Snaps list */}
-            {snaps.length === 0 ? (
+            {isLoadingSnaps && snaps.length === 0 ? (
+              /* Loading Skeletons */
+              [1, 2, 3].map((i) => (
+                <div key={i} className="flex flex-col items-center gap-1 min-w-[62px] animate-pulse">
+                  <div className="w-14 h-14 rounded-full bg-neutral-800" />
+                  <div className="h-2 w-8 rounded bg-neutral-800 mt-1" />
+                </div>
+              ))
+            ) : snapsError && snaps.length === 0 ? (
+              <button
+                onClick={onRetrySnaps}
+                className="flex items-center text-[10px] text-rose-400 font-bold px-3 py-1 bg-rose-500/10 rounded-lg border border-rose-500/20"
+              >
+                Retry Snaps
+              </button>
+            ) : snaps.length === 0 ? (
               <div className="flex items-center text-[11px] text-neutral-500 italic px-2">
                 Nothing here yet
               </div>
@@ -468,7 +564,11 @@ export const RootNavigator: React.FC<RootNavigatorProps> = ({
                   className="flex flex-col items-center gap-1 cursor-pointer min-w-[62px] active:scale-95 transition-transform"
                   onClick={() => onSelectSnap(snap)}
                 >
-                  <div className="w-14 h-14 rounded-full p-0.5 bg-gradient-to-tr from-amber-500 via-rose-500 to-indigo-500 shadow-sm">
+                  <div className={`w-14 h-14 rounded-full p-0.5 shadow-sm ${
+                    snap.hasSeen 
+                      ? 'bg-neutral-800' 
+                      : 'bg-gradient-to-tr from-amber-500 via-rose-500 to-indigo-500'
+                  }`}>
                     <img
                       src={snap.authorAvatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100'}
                       alt={snap.authorName}
@@ -486,17 +586,17 @@ export const RootNavigator: React.FC<RootNavigatorProps> = ({
       )}
 
       {/* MAIN SCREEN BODY */}
-      <div className="flex-1 overflow-y-auto no-scrollbar bg-neutral-950 pb-24 w-full">
-        <div className="max-w-4xl mx-auto p-3 sm:p-4 space-y-3">
+      <div className="flex-1 overflow-y-auto overscroll-y-contain bg-neutral-950 pb-16 w-full">
+        <div className="max-w-4xl mx-auto p-4 flex flex-col gap-3">
           
           {/* ========================================================== */}
           {/* TAB 1: 📰 CAMPUS FEED                                      */}
           {/* ========================================================== */}
           {activeTab === 'feed' && (
-            <div className="space-y-3 animate-in fade-in duration-200">
+            <div className="flex flex-col gap-3 animate-in fade-in duration-200">
               
               {/* Single Row of Feed Category Filters */}
-              <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
+              <div className="flex items-center gap-3 overflow-x-auto no-scrollbar py-1">
                 {FEED_CATEGORIES.map((cat) => (
                   <button
                     key={cat}
@@ -530,7 +630,39 @@ export const RootNavigator: React.FC<RootNavigatorProps> = ({
               </div>
 
               {/* Posts Stream */}
-              {filteredPosts.length === 0 ? (
+              {isLoadingPosts && posts.length === 0 ? (
+                /* Loading Skeletons */
+                [1, 2, 3].map((i) => (
+                  <div key={i} className="rounded-2xl border border-neutral-800 bg-neutral-900/40 p-4 space-y-3 animate-pulse">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-neutral-800" />
+                      <div className="space-y-1.5 flex-1">
+                        <div className="h-3 w-24 rounded bg-neutral-800" />
+                        <div className="h-2 w-16 rounded bg-neutral-800" />
+                      </div>
+                    </div>
+                    <div className="h-20 w-full rounded-xl bg-neutral-800" />
+                  </div>
+                ))
+              ) : postsError && posts.length === 0 ? (
+                /* Error State */
+                <div className="rounded-2xl border border-neutral-800 bg-neutral-900/50 p-10 text-center space-y-4">
+                  <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-rose-500/10 text-rose-400 border border-rose-500/20 mb-1">
+                    <PlusCircle className="w-6 h-6 rotate-45" />
+                  </div>
+                  <h3 className="text-sm font-bold text-white">Unable to load feed</h3>
+                  <p className="text-xs text-neutral-400 max-w-xs mx-auto">
+                    Check your connection or student portal session and try again.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={onRetryPosts}
+                    className="min-h-[44px] px-6 py-2.5 bg-neutral-800 hover:bg-neutral-700 text-white font-bold rounded-xl text-xs border border-neutral-700 transition-colors inline-flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <span>Tap to Retry</span>
+                  </button>
+                </div>
+              ) : filteredPosts.length === 0 ? (
                 <div className="text-center py-12 px-4 bg-neutral-900/50 rounded-2xl border border-neutral-800">
                   <Sparkles className="w-8 h-8 text-amber-400 mx-auto mb-2" />
                   <h4 className="text-sm font-bold text-white">Nothing here yet</h4>
@@ -555,6 +687,8 @@ export const RootNavigator: React.FC<RootNavigatorProps> = ({
                     allBusinesses={businesses}
                     onOpenAuthorProfile={onViewUserProfile}
                     onRequireAuth={(action) => onOpenAuth('signin')}
+                    activeSnap={snaps.find(s => s.authorId === post.authorId)}
+                    onSelectSnap={onSelectSnap}
                   />
                 ))
               )}
@@ -830,7 +964,7 @@ export const RootNavigator: React.FC<RootNavigatorProps> = ({
                           type="button"
                           onClick={() => {
                             if (tile.id === 'idcard') {
-                              setActiveTab('profile');
+                              navigate('/profile');
                             } else {
                               setActiveCampusSubHub(tile.id);
                             }
@@ -1112,10 +1246,7 @@ export const RootNavigator: React.FC<RootNavigatorProps> = ({
                     onClick={() => {
                       setViewingProfileUser(null);
                       onClearTargetUser?.();
-                      if (typeof window !== 'undefined') {
-                        window.history.pushState({}, '', '/');
-                        console.log('Navigated to:', '/');
-                      }
+                      navigate('/profile');
                     }}
                     className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-neutral-900 border border-neutral-800 text-neutral-300 hover:text-white text-xs font-semibold cursor-pointer"
                   >
@@ -1124,15 +1255,45 @@ export const RootNavigator: React.FC<RootNavigatorProps> = ({
                   </button>
                 </div>
               )}
-              <UserProfileView
-                user={activeProfileUser}
-                userPosts={posts.filter((p) => p.authorId === activeProfileUser?.id || p.authorUsername === activeProfileUser?.username)}
-                userSnaps={snaps.filter((s) => s.authorId === activeProfileUser?.id)}
-                userBusinesses={activeProfileUser?.id === currentUser?.id ? userOwnedBusinesses : businesses.filter((b) => b.ownerId === activeProfileUser?.id)}
-                onOpenCreatePost={onOpenCreatePost}
-                onOpenCreateBusiness={onOpenCreateBusiness}
-                onSelectBusiness={onSelectBusiness}
-              />
+
+              {isProfileLoading && !viewingProfileUser ? (
+                <div className="flex flex-col items-center justify-center py-20 gap-3">
+                  <RefreshCw className="w-8 h-8 text-amber-500 animate-spin" />
+                  <p className="text-xs text-neutral-400 font-medium tracking-wide">Loading student profile...</p>
+                </div>
+              ) : profileError ? (
+                <div 
+                  className="mx-auto max-w-sm rounded-3xl border border-rose-500/20 bg-rose-500/5 p-8 text-center mt-10 cursor-pointer hover:bg-rose-500/10 transition-colors"
+                  onClick={() => {
+                    const match = location.pathname.match(/^\/profile\/([^/]+)/);
+                    if (match) {
+                      const userId = match[1];
+                      setIsProfileLoading(true);
+                      setProfileError(null);
+                      fetchUserProfileByIdFromSupabase(userId)
+                        .then(p => { if (p) setViewingProfileUser(p); else setProfileError("Couldn't load student profile. Tap to retry."); })
+                        .catch(() => setProfileError("Couldn't load student profile. Tap to retry."))
+                        .finally(() => setIsProfileLoading(false));
+                    }
+                  }}
+                >
+                  <AlertCircle className="w-10 h-10 text-rose-500 mx-auto mb-4" />
+                  <h3 className="text-sm font-bold text-white mb-1">Profile Unavailable</h3>
+                  <p className="text-xs text-neutral-400 leading-relaxed">
+                    {profileError}
+                  </p>
+                </div>
+              ) : (
+                <UserProfileView
+                  user={activeProfileUser}
+                  userPosts={posts.filter((p) => p.authorId === activeProfileUser?.id || p.authorUsername === activeProfileUser?.username)}
+                  userSnaps={snaps.filter((s) => s.authorId === activeProfileUser?.id)}
+                  userBusinesses={activeProfileUser?.id === currentUser?.id ? userOwnedBusinesses : businesses.filter((b) => b.ownerId === activeProfileUser?.id)}
+                  onOpenCreatePost={onOpenCreatePost}
+                  onOpenCreateBusiness={onOpenCreateBusiness}
+                  onSelectBusiness={onSelectBusiness}
+                />
+              )}
             </div>
           )}
 
@@ -1152,7 +1313,7 @@ export const RootNavigator: React.FC<RootNavigatorProps> = ({
           {/* COLUMN 1: FEED */}
           <button
             type="button"
-            onClick={() => setActiveTab('feed')}
+            onClick={() => navigateToTab('feed')}
             className="flex flex-col items-center justify-center h-full w-full col-span-1 transition-transform active:scale-95 cursor-pointer"
           >
             <Home className={`w-[22px] h-[22px] transition-colors ${activeTab === 'feed' ? 'text-amber-400' : 'text-neutral-400'}`} />
@@ -1164,7 +1325,7 @@ export const RootNavigator: React.FC<RootNavigatorProps> = ({
           {/* COLUMN 2: MARKET */}
           <button
             type="button"
-            onClick={() => setActiveTab('market')}
+            onClick={() => navigateToTab('market')}
             className="flex flex-col items-center justify-center h-full w-full col-span-1 transition-transform active:scale-95 cursor-pointer"
           >
             <ShoppingBag className={`w-[22px] h-[22px] transition-colors ${activeTab === 'market' ? 'text-amber-400' : 'text-neutral-400'}`} />
@@ -1188,7 +1349,7 @@ export const RootNavigator: React.FC<RootNavigatorProps> = ({
           {/* COLUMN 4: CAMPUS HUBS */}
           <button
             type="button"
-            onClick={() => setActiveTab('campus')}
+            onClick={() => navigateToTab('campus')}
             className="flex flex-col items-center justify-center h-full w-full col-span-1 transition-transform active:scale-95 cursor-pointer"
           >
             <Building2 className={`w-[22px] h-[22px] transition-colors ${activeTab === 'campus' ? 'text-amber-400' : 'text-neutral-400'}`} />
@@ -1200,7 +1361,7 @@ export const RootNavigator: React.FC<RootNavigatorProps> = ({
           {/* COLUMN 5: CHATS */}
           <button
             type="button"
-            onClick={() => setActiveTab('chats')}
+            onClick={() => navigateToTab('chats')}
             className="flex flex-col items-center justify-center h-full w-full col-span-1 transition-transform active:scale-95 cursor-pointer"
           >
             <div className="relative flex items-center justify-center">
@@ -1411,12 +1572,7 @@ export const RootNavigator: React.FC<RootNavigatorProps> = ({
           initialTab={initialSearchTab}
           onSelectUser={(u) => {
             const targetPath = `/profile/${u.id}`;
-            console.log('Navigated to:', targetPath);
-            if (typeof window !== 'undefined') {
-              window.history.pushState({}, '', targetPath);
-            }
-            setViewingProfileUser(u);
-            setActiveTab('profile');
+            navigate(targetPath);
             onViewUserProfile?.(u.id, u);
           }}
           onSelectPage={(pageId) => {
@@ -1437,12 +1593,7 @@ export const RootNavigator: React.FC<RootNavigatorProps> = ({
           currentUser={currentUser}
           onSelectUser={(u) => {
             const targetPath = `/profile/${u.id}`;
-            console.log('Navigated to:', targetPath);
-            if (typeof window !== 'undefined') {
-              window.history.pushState({}, '', targetPath);
-            }
-            setViewingProfileUser(u);
-            setActiveTab('profile');
+            navigate(targetPath);
             onViewUserProfile?.(u.id, u);
           }}
           onToggleFollow={(id) => {
@@ -1450,6 +1601,23 @@ export const RootNavigator: React.FC<RootNavigatorProps> = ({
           }}
         />
 
+      {/* Hidden File Input for Avatar Change */}
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={handleFileChange}
+        accept="image/*"
+        className="hidden"
+      />
+
+      <ProfileAvatarSheet
+        isOpen={isAvatarSheetOpen}
+        onClose={() => setIsAvatarSheetOpen(false)}
+        onViewSnap={handleViewOwnSnap}
+        onChangePhoto={() => fileInputRef.current?.click()}
+        onRemovePhoto={handleRemovePhoto}
+        hasActiveSnap={myActiveSnaps.length > 0}
+      />
     </div>
   );
 };

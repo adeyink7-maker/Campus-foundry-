@@ -1,3 +1,4 @@
+import { useNavigate } from 'react-router-dom';
 import { 
   Store, 
   ShoppingBag, 
@@ -34,6 +35,15 @@ export const Navbar = ({
   const { openChatDrawer, unreadTotalCount } = useChat();
   const { setIsCartOpen, totalItemCount } = useCart();
 
+  const navigate = useNavigate();
+  const handleLinkClick = (id: string) => {
+    if (id === 'stores') navigate('/market');
+    else if (id === 'hubs') navigate('/campus');
+    else if (id === 'blueprints') navigate('/blueprints');
+    else if (id === 'dashboard') navigate('/profile');
+    else navigate('/' + id);
+  };
+
   const navLinks = [
     { id: 'stores', label: 'Stores & Services', icon: Store },
     { id: 'hubs', label: 'Hostels & Faculties', icon: Building2 },
@@ -48,7 +58,7 @@ export const Navbar = ({
         {/* Brand Identity */}
         <div className="flex items-center gap-3">
           <button
-            onClick={() => setActiveTab('stores')}
+            onClick={() => handleLinkClick('stores')}
             className="flex items-center gap-2.5 text-left focus:outline-none group"
           >
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-600 to-emerald-800 text-white font-extrabold text-sm shadow-md shadow-emerald-950/40 border border-emerald-500/30 group-hover:border-emerald-400 transition-colors">
@@ -78,7 +88,7 @@ export const Navbar = ({
             return (
               <button
                 key={link.id}
-                onClick={() => setActiveTab(link.id)}
+                onClick={() => handleLinkClick(link.id)}
                 className={`flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-xs font-semibold transition-all ${
                   isActive
                     ? 'bg-neutral-800 text-white shadow-sm'
@@ -120,7 +130,7 @@ export const Navbar = ({
               </div>
 
               <button
-                onClick={() => setActiveTab('dashboard')}
+                onClick={() => handleLinkClick('dashboard')}
                 title="Open Dashboard"
                 className="text-xs text-neutral-400 hover:text-white ml-1 p-1 hover:bg-neutral-800 rounded transition-colors"
               >
@@ -206,7 +216,7 @@ export const Navbar = ({
           return (
             <button
               key={link.id}
-              onClick={() => setActiveTab(link.id)}
+              onClick={() => handleLinkClick(link.id)}
               className={`flex flex-col items-center gap-0.5 py-1 px-2 rounded-lg text-[10px] font-medium transition-colors ${
                 isActive ? 'text-emerald-400 font-bold bg-neutral-900' : 'text-neutral-400 hover:text-white'
               }`}

@@ -196,6 +196,7 @@ export async function signInWithEmailPassword(params: SignInParams): Promise<{
   });
 
   if (error || !data?.user) {
+    console.error('[Supabase Auth Debug]: signInWithEmailPassword error:', error);
     const msg = error?.message?.toLowerCase() || '';
     if (msg.includes('email not confirmed')) {
       throw new Error('Email not confirmed. Please enter the 6-digit code sent to your email to verify your account.');

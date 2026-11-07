@@ -60,7 +60,7 @@ export const OfflineAwareStatusContainer: React.FC<OfflineAwareStatusContainerPr
         caption: s.caption || 'Campus moments captured in real time ✨',
         createdAt: new Date().toISOString(),
         expiresInHours: 24,
-        viewsCount: 42,
+        viewsCount: s.viewsCount || 0,
       }))
     : [];
 
@@ -363,10 +363,14 @@ export const OfflineAwareStatusContainer: React.FC<OfflineAwareStatusContainerPr
           )}
 
           <div className="flex items-center justify-between pt-1 border-t border-white/10 text-xs text-neutral-300">
-            <span className="flex items-center gap-1 text-[11px] font-mono text-neutral-400">
-              <Eye className="h-3.5 w-3.5" />
-              <span>{currentStatus.viewsCount + 1} views</span>
-            </span>
+            {currentAuthor?.userId && currentAuthor.userId === currentStatus.authorId ? (
+              <span className="flex items-center gap-1 text-[11px] font-mono text-neutral-400">
+                <Eye className="h-3.5 w-3.5" />
+                <span>{currentStatus.viewsCount} {currentStatus.viewsCount === 1 ? 'view' : 'views'}</span>
+              </span>
+            ) : (
+              <div />
+            )}
 
             <button
               type="button"

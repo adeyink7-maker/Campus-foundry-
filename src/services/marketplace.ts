@@ -1,4 +1,4 @@
-import { supabase, isSupabaseConfigured, isMockConversation, isValidUuid, toSafeUuid, emitAppToast } from './supabase';
+import { supabase, isSupabaseConfigured, isMockConversation, isValidUuid, toSafeUuid, emitAppToast, confirmDeliveryRPC } from './supabase';
 import { getFriendlyError } from '../utils/friendlyErrors';
 export { isSupabaseConfigured };
 import { 
@@ -576,9 +576,15 @@ export async function updateOrderStatus(params: UpdateOrderStatusParams): Promis
   return { ok: true };
 }
 
+export async function confirmDelivery(orderId: string, pin: string): Promise<boolean> {
+  return confirmDeliveryRPC(orderId, pin);
+}
+
 export async function getDeliveryPin(orderId: string): Promise<string | null> {
   if (!isSupabaseConfigured || !orderId) return null;
 
+  // Rule: Only buyers should be able to read order_secrets. 
+  // Traders should use confirm_delivery RPC with the PIN provided by the buyer.
   const { data, error } = await supabase
     .from('order_secrets')
     .select('delivery_pin')
@@ -586,6 +592,10 @@ export async function getDeliveryPin(orderId: string): Promise<string | null> {
     .maybeSingle();
 
   if (error) {
+    if (error.code === '42501') {
+      // Permission denied (e.g. trader trying to read)
+      return null;
+    }
     console.warn('[Marketplace getDeliveryPin Notice]:', error.message);
     return null;
   }

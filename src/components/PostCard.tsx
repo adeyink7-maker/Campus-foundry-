@@ -19,7 +19,7 @@ import {
   ShieldCheck,
   Flag
 } from 'lucide-react';
-import { CampusPost, StudentBusiness, PostReactionCounts } from '../types';
+import { CampusPost, StudentBusiness, PostReactionCounts, CampusSnap } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { useChat } from '../context/ChatContext';
 import { emitAppToast } from '../services/supabase';
@@ -35,6 +35,8 @@ interface PostCardProps {
   onOpenAuthorProfile?: (authorId: string) => void;
   onOpenMyStore?: (business: StudentBusiness) => void;
   onRequireAuth?: (action?: () => void) => void;
+  activeSnap?: CampusSnap;
+  onSelectSnap?: (snap: CampusSnap) => void;
 }
 
 export const PostCard: React.FC<PostCardProps> = ({
@@ -46,6 +48,8 @@ export const PostCard: React.FC<PostCardProps> = ({
   onOpenAuthorProfile,
   onOpenMyStore,
   onRequireAuth,
+  activeSnap,
+  onSelectSnap,
 }) => {
   const { currentUser, toggleFollowUser } = useAuth();
   const { openChatWithBusiness, openChatDrawer } = useChat();
@@ -152,7 +156,7 @@ export const PostCard: React.FC<PostCardProps> = ({
   };
 
   return (
-    <article className={`rounded-3xl border bg-neutral-900/90 p-5 sm:p-6 backdrop-blur-xl shadow-xl transition-all space-y-4 ${
+    <article className={`rounded-3xl border bg-neutral-900/90 p-4 backdrop-blur-xl shadow-xl transition-all flex flex-col gap-3 ${
       post.isBreaking
         ? 'border-red-500/50 bg-red-950/20 shadow-red-950/30'
         : 'border-neutral-800 hover:border-neutral-700/80'
@@ -207,9 +211,17 @@ export const PostCard: React.FC<PostCardProps> = ({
                   level: post.authorLevel,
                   faculty: post.authorFaculty,
                   isVerified: post.isVerifiedStudent,
+                  hasUnseenSnap: activeSnap ? !activeSnap.hasSeen : false,
                 }}
                 size="md"
-                onClick={() => onOpenAuthorProfile?.(post.authorId)}
+                showRingHint={Boolean(activeSnap)}
+                onClick={(e) => {
+                  if (activeSnap && onSelectSnap) {
+                    onSelectSnap(activeSnap);
+                  } else {
+                    onOpenAuthorProfile?.(post.authorId);
+                  }
+                }}
               />
 
               <div className="min-w-0">

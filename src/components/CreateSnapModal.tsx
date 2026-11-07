@@ -179,7 +179,7 @@ export const CreateSnapModal: React.FC<CreateSnapModalProps> = ({
       caption: caption.trim(),
       createdAt: new Date().toISOString(),
       expiresInHours: 24,
-      viewsCount: 1,
+      viewsCount: 0,
       privacySetting,
       stickers,
     };

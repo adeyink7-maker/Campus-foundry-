@@ -4,7 +4,7 @@ import { AppUser } from '../../types';
 import { usePlayerCard } from '../../context/PlayerCardContext';
 
 export interface LongPressAvatarProps {
-  user?: Partial<AppUser> & { id?: string; fullName?: string; avatarUrl?: string };
+  user?: Partial<AppUser> & { id?: string; fullName?: string; avatarUrl?: string; hasUnseenSnap?: boolean };
   userId?: string;
   name?: string;
   avatarUrl?: string;
@@ -274,7 +274,19 @@ export const LongPressAvatar: React.FC<LongPressAvatarProps> = ({
         </div>
       )}
 
+      {/* Snap Ring */}
+      {showRingHint && (
+        <div 
+          className={`absolute -inset-1 rounded-full border-2 transition-colors ${
+            user?.hasUnseenSnap 
+              ? 'border-amber-400' 
+              : 'border-neutral-700'
+          }`} 
+        />
+      )}
+
       {children}
     </div>
   );
 };
+

@@ -5,6 +5,7 @@ import {
   ChatOrderSnippet, 
   StudentBusiness, 
   ChatThemeMode,
+  AppUser,
 } from '../types';
 import { useAuth } from './AuthContext';
 import { 
@@ -76,6 +77,7 @@ interface ChatContextType {
   blockMessageRequest: (conversationId: string) => void;
   toggleMessageReaction: (messageId: string, emoji: string) => void;
   clearAllChats: () => void;
+  openChatWithUser: (user: AppUser) => Promise<void>;
 }
 
 const STORAGE_CHATS_KEY = 'campus_foundry_chat_messages_v7';
@@ -752,6 +754,58 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
         blockMessageRequest,
         toggleMessageReaction,
         clearAllChats,
+        openChatWithUser: async (user: AppUser) => {
+          if (!currentUser) {
+            emitAppToast('You must be logged in to chat', 'error');
+            return;
+          }
+          if (currentUser.id === user.id) {
+            emitAppToast("You can't message yourself", 'error');
+            return;
+          }
+
+          // Check if conversation exists
+          const existingConv = conversations.find(
+            (c) => (c.buyerId === currentUser.id && c.traderId === user.id) || (c.buyerId === user.id && c.traderId === currentUser.id)
+          );
+          
+          if (existingConv) {
+            setActiveConversationId(existingConv.id);
+            setIsChatDrawerOpen(true);
+            return;
+          }
+
+          // Create new conversation
+          const convId = toSafeUuid(`conv_${currentUser.id}_${user.id}`);
+          const isFollowing = currentUser.followingUserIds?.includes(user.id);
+          
+          const newConv: ChatConversation = {
+            id: convId,
+            kind: 'direct',
+            businessId: '',
+            businessName: user.fullName,
+            traderName: user.fullName,
+            traderId: user.id,
+            traderHostel: user.hostelLocation || '',
+            buyerId: currentUser.id,
+            buyerName: currentUser.fullName,
+            lastMessage: 'Started a new conversation',
+            lastMessageTimestamp: new Date().toISOString(),
+            unreadCount: 0,
+            isMessageRequest: !isFollowing,
+            requestStatus: isFollowing ? 'accepted' : 'pending',
+            isOnline: true,
+            lastSeen: 'Online',
+          };
+
+          setConversations((prev) => [newConv, ...prev]);
+          setActiveConversationId(convId);
+          setIsChatDrawerOpen(true);
+          
+          if (isSupabaseConfigured) {
+              await upsertConversationInSupabase(newConv);
+          }
+        },
       }}
     >
       {children}

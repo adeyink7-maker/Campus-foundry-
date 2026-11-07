@@ -33,6 +33,12 @@ interface CampusFeedViewProps {
   onOpenAuthorProfile?: (authorId: string, authorDetails?: any) => void;
   onDeletePost?: (postId: string) => void;
   onRequireAuth?: (action?: () => void) => void;
+  isLoadingPosts?: boolean;
+  postsError?: string | null;
+  onRetryPosts?: () => void;
+  isLoadingSnaps?: boolean;
+  snapsError?: string | null;
+  onRetrySnaps?: () => void;
 }
 
 const FEED_CATEGORIES = [
@@ -59,6 +65,12 @@ export const CampusFeedView = ({
   onOpenAuthorProfile,
   onDeletePost,
   onRequireAuth,
+  isLoadingPosts = false,
+  postsError = null,
+  onRetryPosts,
+  isLoadingSnaps = false,
+  snapsError = null,
+  onRetrySnaps,
 }: CampusFeedViewProps) => {
   const { currentUser } = useAuth();
   const [activeCategory, setActiveCategory] = useState<string>('All Buzz');
@@ -94,13 +106,16 @@ export const CampusFeedView = ({
   }, [posts, activeCategory, selectedLevel, searchQuery, sortOrder]);
 
   return (
-    <div className="space-y-6">
+    <div className="flex flex-col gap-3">
       
       {/* 1. 24-Hour Campus Snaps Bar */}
       <CampusSnapsBar
         snaps={snaps}
         onSelectSnap={onSelectSnap}
         onOpenCreateSnap={onOpenCreateSnap}
+        isLoading={isLoadingSnaps}
+        error={snapsError}
+        onRetry={onRetrySnaps}
       />
 
       {/* 2. Quick Create Post Banner */}
@@ -214,7 +229,40 @@ export const CampusFeedView = ({
 
       {/* 4. Posts Feed List */}
       <div className="space-y-4">
-        {filteredPosts.length > 0 ? (
+        {isLoadingPosts && posts.length === 0 ? (
+          /* Loading Skeletons */
+          [1, 2, 3].map((i) => (
+            <div key={i} className="rounded-2xl border border-neutral-800 bg-neutral-900/40 p-4 space-y-3 animate-pulse">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-neutral-800" />
+                <div className="space-y-1.5 flex-1">
+                  <div className="h-3 w-24 rounded bg-neutral-800" />
+                  <div className="h-2 w-16 rounded bg-neutral-800" />
+                </div>
+              </div>
+              <div className="h-20 w-full rounded-xl bg-neutral-800" />
+              <div className="h-3 w-1/2 rounded bg-neutral-800" />
+            </div>
+          ))
+        ) : postsError && posts.length === 0 ? (
+          /* Error State */
+          <div className="rounded-2xl border border-neutral-800 bg-neutral-900/50 p-10 text-center space-y-4">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-rose-500/10 text-rose-400 border border-rose-500/20 mb-1">
+              <PlusCircle className="w-6 h-6 rotate-45" />
+            </div>
+            <h3 className="text-sm font-bold text-white">Unable to load feed</h3>
+            <p className="text-xs text-neutral-400 max-w-xs mx-auto">
+              Check your connection or student portal session and try again.
+            </p>
+            <button
+              type="button"
+              onClick={onRetryPosts}
+              className="min-h-[44px] px-6 py-2.5 bg-neutral-800 hover:bg-neutral-700 text-white font-bold rounded-xl text-xs border border-neutral-700 transition-colors inline-flex items-center gap-1.5 cursor-pointer"
+            >
+              <span>Tap to Retry</span>
+            </button>
+          </div>
+        ) : filteredPosts.length > 0 ? (
           filteredPosts.map((post) => (
             <PostCard
               key={post.id}
@@ -235,6 +283,8 @@ export const CampusFeedView = ({
                 })
               }
               onRequireAuth={onRequireAuth}
+              activeSnap={snaps.find(s => s.authorId === post.authorId)}
+              onSelectSnap={onSelectSnap}
             />
           ))
         ) : (

@@ -327,6 +327,7 @@ export type AppModule =
   | 'clubs' 
   | 'news' 
   | 'map' 
+  | 'campus'
   | 'dashboard';
 
 export type DomainCategory = 'POLITICS' | 'MARKETPLACE' | 'TECH' | 'ARTS' | 'LAW' | 'GENERAL';

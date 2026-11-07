@@ -21,13 +21,14 @@ import {
   Trash2,
   Loader2
 } from 'lucide-react';
-import { CampusSnap } from '../types';
+import { CampusSnap, SnapViewerRecord } from '../types';
 import { StorySticker } from '../types/stickers';
 import { StickerOverlayContainer } from './stickers/StickerOverlayContainer';
 import { useScreenSecurity } from '../mobile/database/useScreenSecurity';
 import { LongPressAvatar } from './playercard/LongPressAvatar';
 import { useAuth } from '../context/AuthContext';
-import { deleteSnapFromSupabase } from '../services/supabase';
+import { deleteCampusSnapInSupabase, recordSnapView, fetchSnapViewers, emitAppToast } from '../services/supabase';
+import { getFriendlyError } from '../utils/friendlyErrors';
 
 interface SnapViewerModalProps {
   snap: CampusSnap | null;
@@ -60,6 +61,27 @@ export const SnapViewerModal = ({
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
+  const isAuthor = currentUser?.id && snap ? currentUser.id === snap.authorId : false;
+
+  const handleDeleteSnapConfirmed = async () => {
+    if (!snap) return;
+    setIsDeleting(true);
+    setDeleteError(null);
+    try {
+      await deleteCampusSnapInSupabase(snap.id, snap.mediaUrl);
+      onDeleteSnap?.(snap.id);
+      setIsDeleting(false);
+      setShowDeleteConfirm(false);
+      onClose();
+    } catch (err: any) {
+      console.error('[Delete Snap Error]:', err);
+      setIsDeleting(false);
+      const friendly = getFriendlyError(err, 'snap');
+      setDeleteError(friendly);
+      emitAppToast(friendly, 'error');
+    }
+  };
+
   // Seamless Swipe Gesture State
   const [dragOffsetX, setDragOffsetX] = useState(0);
   const [isSwiping, setIsSwiping] = useState(false);
@@ -85,41 +107,41 @@ export const SnapViewerModal = ({
     },
   });
 
-  // Simulated viewers list for this status
-  const demoViewers = snap?.viewersList || [
-    {
-      id: 'v_1',
-      name: 'Blessing Adeleke',
-      username: '@blessing_med',
-      avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100',
-      dept: 'Medicine & Surgery (400L)',
-      viewedAt: '2m ago',
-    },
-    {
-      id: 'v_2',
-      name: 'Chidi Okonkwo',
-      username: '@chidi_cis',
-      avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100',
-      dept: 'Computer Science (300L)',
-      viewedAt: '14m ago',
-    },
-    {
-      id: 'v_3',
-      name: 'Hauwa Mohammed',
-      username: '@hauwa_law',
-      avatarUrl: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=100',
-      dept: 'Faculty of Law (500L)',
-      viewedAt: '45m ago',
-    },
-    {
-      id: 'v_4',
-      name: 'Femi Alabi',
-      username: '@femi_engr',
-      avatarUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=100',
-      dept: 'Electrical Engineering (200L)',
-      viewedAt: '1h ago',
-    },
-  ];
+  // Real snap views state
+  const [realViewsCount, setRealViewsCount] = useState<number>(snap?.viewsCount || 0);
+  const [realViewersList, setRealViewersList] = useState<SnapViewerRecord[]>(snap?.viewersList || []);
+
+  useEffect(() => {
+    if (!snap) return;
+
+    let isMounted = true;
+    setRealViewsCount(snap.viewsCount || 0);
+
+    async function syncSnapViews() {
+      if (!snap) return;
+      // Record view if current user is viewing someone else's snap
+      if (currentUser?.id && currentUser.id !== snap.authorId) {
+        const count = await recordSnapView(snap.id, currentUser.id, snap.authorId);
+        if (isMounted && count > 0) {
+          setRealViewsCount(count);
+        }
+      }
+
+      // Fetch latest views count and viewers list from snap_views
+      const { count, viewers } = await fetchSnapViewers(snap.id);
+      if (isMounted) {
+        if (count > 0 || viewers.length > 0) {
+          setRealViewsCount(count);
+          setRealViewersList(viewers);
+        } else {
+          setRealViewersList(snap.viewersList || []);
+        }
+      }
+    }
+
+    syncSnapViews();
+    return () => { isMounted = false; };
+  }, [snap?.id, currentUser?.id]);
 
   // Initialize interactive stickers
   useEffect(() => {
@@ -364,6 +386,35 @@ export const SnapViewerModal = ({
           </div>
 
           <div className="flex items-center gap-1">
+            {isAuthor && (
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setIsMenuOpen(!isMenuOpen)}
+                  className="p-1.5 rounded-full bg-black/40 hover:bg-black/70 text-white/90 backdrop-blur transition-all"
+                  title="Options"
+                >
+                  <MoreVertical className="h-4 w-4" />
+                </button>
+
+                {isMenuOpen && (
+                  <div className="absolute right-0 top-10 w-36 rounded-2xl bg-neutral-900 border border-neutral-700 shadow-2xl overflow-hidden z-60 animate-in fade-in">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsMenuOpen(false);
+                        setShowDeleteConfirm(true);
+                      }}
+                      className="w-full px-3.5 py-2.5 text-left text-xs font-semibold text-rose-400 hover:bg-rose-500/10 flex items-center gap-2 transition-colors cursor-pointer"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      <span>Delete snap</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
             <button
               type="button"
               onClick={() => setIsMuted(!isMuted)}
@@ -457,16 +508,20 @@ export const SnapViewerModal = ({
 
           <div className="flex items-center justify-between pt-1 border-t border-white/15 text-xs text-neutral-300">
             
-            {/* Real-Time Viewer Count Trigger */}
-            <button
-              type="button"
-              onClick={() => setIsViewersDrawerOpen(true)}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/10 hover:bg-white/20 text-white text-[11px] font-mono transition-colors cursor-pointer"
-            >
-              <Eye className="h-3.5 w-3.5 text-amber-400" />
-              <span>{snap.viewsCount + demoViewers.length} views</span>
-              <ChevronUp className="h-3 w-3 text-neutral-400" />
-            </button>
+            {/* Real-Time Viewer Count Trigger (Author Only) */}
+            {currentUser?.id && currentUser.id === snap.authorId ? (
+              <button
+                type="button"
+                onClick={() => setIsViewersDrawerOpen(true)}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/10 hover:bg-white/20 text-white text-[11px] font-mono transition-colors cursor-pointer"
+              >
+                <Eye className="h-3.5 w-3.5 text-amber-400" />
+                <span>{realViewsCount} {realViewsCount === 1 ? 'view' : 'views'}</span>
+                <ChevronUp className="h-3 w-3 text-neutral-400" />
+              </button>
+            ) : (
+              <div />
+            )}
 
             {/* Like & Share Controls */}
             <div className="flex items-center gap-2">
@@ -484,9 +539,9 @@ export const SnapViewerModal = ({
         </div>
 
         {/* ====================================================== */}
-        {/* REAL-TIME VIEWER LIST DRAWER (Instagram / WhatsApp Model) */}
+        {/* REAL-TIME VIEWER LIST DRAWER (Author Only) */}
         {/* ====================================================== */}
-        {isViewersDrawerOpen && (
+        {isViewersDrawerOpen && currentUser?.id === snap.authorId && (
           <div 
             className="absolute inset-x-0 bottom-0 top-16 z-50 rounded-t-3xl bg-neutral-900/98 border-t border-neutral-700 p-5 flex flex-col space-y-4 animate-in slide-in-from-bottom-10 backdrop-blur-xl shadow-2xl"
             onClick={(e) => e.stopPropagation()}
@@ -494,7 +549,7 @@ export const SnapViewerModal = ({
             <div className="flex items-center justify-between pb-3 border-b border-neutral-800">
               <div className="flex items-center gap-2">
                 <Users className="h-5 w-5 text-amber-400" />
-                <h3 className="text-sm font-bold text-white">Status Viewers ({demoViewers.length + snap.viewsCount})</h3>
+                <h3 className="text-sm font-bold text-white">Status Viewers ({realViewsCount})</h3>
               </div>
               <button
                 type="button"
@@ -506,33 +561,84 @@ export const SnapViewerModal = ({
             </div>
 
             <div className="flex-1 overflow-y-auto space-y-2.5 pr-1">
-              {demoViewers.map((viewer) => (
-                <div
-                  key={viewer.id}
-                  className="p-2.5 rounded-2xl bg-neutral-950 border border-neutral-800 flex items-center justify-between gap-3"
-                >
-                  <div className="flex items-center gap-2.5">
-                    <img
-                      src={viewer.avatarUrl}
-                      alt={viewer.name}
-                      className="h-10 w-10 rounded-full object-cover border border-neutral-700"
-                    />
-                    <div>
-                      <h4 className="text-xs font-bold text-white">{viewer.name}</h4>
-                      <p className="text-[10px] text-neutral-400 font-mono">{viewer.dept}</p>
+              {realViewersList.length === 0 ? (
+                <div className="py-8 text-center text-xs text-neutral-400 font-mono">
+                  No views yet.
+                </div>
+              ) : (
+                realViewersList.map((viewer) => (
+                  <div
+                    key={viewer.id}
+                    className="p-2.5 rounded-2xl bg-neutral-950 border border-neutral-800 flex items-center justify-between gap-3"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <img
+                        src={viewer.avatarUrl}
+                        alt={viewer.name}
+                        className="h-10 w-10 rounded-full object-cover border border-neutral-700"
+                      />
+                      <div>
+                        <h4 className="text-xs font-bold text-white">{viewer.name}</h4>
+                        <p className="text-[10px] text-neutral-400 font-mono">{viewer.dept}</p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 text-right">
+                      <span className="text-[10px] text-neutral-500 font-mono">{viewer.viewedAt}</span>
                     </div>
                   </div>
-
-                  <div className="flex items-center gap-2 text-right">
-                    <span className="text-[10px] text-neutral-500 font-mono">{viewer.viewedAt}</span>
-                    <Heart className="h-3.5 w-3.5 text-rose-500 fill-current" />
-                  </div>
-                </div>
-              ))}
+                ))
+              )}
             </div>
 
             <div className="pt-2 border-t border-neutral-800 text-center text-[10px] font-mono text-neutral-400">
               Only verified contacts can view your statuses based on your privacy filter.
+            </div>
+          </div>
+        )}
+
+        {/* Delete Confirmation Modal */}
+        {showDeleteConfirm && (
+          <div className="absolute inset-0 z-70 bg-black/80 backdrop-blur-md flex items-center justify-center p-4" onClick={(e) => e.stopPropagation()}>
+            <div className="w-full max-w-xs rounded-3xl bg-neutral-900 border border-neutral-700 p-5 shadow-2xl space-y-4 animate-in zoom-in-95">
+              <div className="text-center space-y-1.5">
+                <div className="mx-auto w-10 h-10 rounded-full bg-rose-500/20 text-rose-500 flex items-center justify-center mb-2">
+                  <Trash2 className="h-5 w-5" />
+                </div>
+                <h3 className="text-sm font-bold text-white">Delete Snap?</h3>
+                <p className="text-xs text-neutral-400 leading-relaxed">
+                  This status and its media will be permanently deleted and removed from your story ring.
+                </p>
+                {deleteError && (
+                  <p className="text-[11px] text-rose-400 font-medium pt-1">{deleteError}</p>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2 pt-1">
+                <button
+                  type="button"
+                  disabled={isDeleting}
+                  onClick={() => setShowDeleteConfirm(false)}
+                  className="flex-1 py-2.5 rounded-xl bg-neutral-800 text-neutral-300 hover:text-white text-xs font-bold transition-all cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={isDeleting}
+                  onClick={handleDeleteSnapConfirmed}
+                  className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold transition-all shadow-lg cursor-pointer flex items-center justify-center gap-2"
+                >
+                  {isDeleting ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <span>Deleting...</span>
+                    </>
+                  ) : (
+                    <span>Delete</span>
+                  )}
+                </button>
+              </div>
             </div>
           </div>
         )}

@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { GraduationCap, ShieldCheck, ArrowRight } from 'lucide-react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ChatProvider } from './context/ChatContext';
 import { MarketplaceChatProvider } from './context/MarketplaceChatContext';
@@ -153,8 +154,19 @@ function MainApp() {
   // Toast State
   const [toastData, setToastData] = useState<{ message: string; type: 'error' | 'success' | 'info' } | null>(null);
 
-  // Active Ecosystem Module
-  const [currentModule, setCurrentModule] = useState<AppModule>('feed');
+  // Active Ecosystem Module - initialized from URL for stable refresh/back
+  const [currentModule, setCurrentModule] = useState<AppModule>(() => {
+    const path = window.location.pathname;
+    if (path.startsWith('/market')) return 'marketplace';
+    if (path.startsWith('/campus') || path.startsWith('/hubs')) return 'campus';
+    if (path.startsWith('/politics')) return 'politics';
+    if (path.startsWith('/academics')) return 'academics';
+    if (path.startsWith('/clubs')) return 'clubs';
+    if (path.startsWith('/news')) return 'news';
+    if (path.startsWith('/map')) return 'map';
+    if (path.startsWith('/profile') || path.startsWith('/dashboard')) return 'dashboard';
+    return 'feed';
+  });
 
   // Academic Class Year Filter
   const [selectedLevel, setSelectedLevel] = useState<StudentLevel | 'All'>('All');
@@ -170,9 +182,13 @@ function MainApp() {
 
   // Social Posts Data State
   const [posts, setPosts] = useState<CampusPost[]>([]);
+  const [isLoadingPosts, setIsLoadingPosts] = useState(true);
+  const [postsError, setPostsError] = useState<string | null>(null);
 
   // Campus Snaps Data State
   const [snaps, setSnaps] = useState<CampusSnap[]>([]);
+  const [isLoadingSnaps, setIsLoadingSnaps] = useState(true);
+  const [snapsError, setSnapsError] = useState<string | null>(null);
 
   const showToast = (msg: string, type: 'error' | 'success' | 'info' = 'info') => {
     setToastData({ message: msg, type });
@@ -227,27 +243,20 @@ function MainApp() {
   }, []);
 
   useEffect(() => {
-    const HAS_RESET_LAUNCH_KEY = 'campus_foundry_system_reset_v1';
-    if (!localStorage.getItem(HAS_RESET_LAUNCH_KEY)) {
-      resetDatabaseToZero().then(() => {
-        localStorage.setItem(HAS_RESET_LAUNCH_KEY, 'true');
-        loadBusinesses();
-      });
-    } else {
-      loadBusinesses();
-    }
+    loadBusinesses();
   }, [loadBusinesses]);
 
-  // Register /profile/:id route & handle client navigation without falling through to catch-all
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  // Register /profile/:id route & handle client navigation
   useEffect(() => {
     const handleRouteChange = async () => {
-      if (typeof window === 'undefined') return;
-      const pathname = window.location.pathname;
+      const pathname = location.pathname;
       const profileMatch = pathname.match(/^\/profile\/([^/]+)/);
 
       if (profileMatch) {
         const userId = decodeURIComponent(profileMatch[1]);
-        console.log('Navigated path:', pathname);
 
         if (currentUser && currentUser.id === userId) {
           setTargetProfileUser(currentUser);
@@ -279,127 +288,104 @@ function MainApp() {
               followersCount: data.followers_count || 0,
               followingCount: data.following_count || 0,
             });
-          } else {
-            setTargetProfileUser({
-              id: userId,
-              email: 'student@unilorin.edu.ng',
-              fullName: 'Campus Student',
-              username: `@student_${userId.slice(0, 5)}`,
-              role: 'student',
-              avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300',
-              bio: 'Undergraduate at University of Ilorin.',
-              level: '300L',
-              department: 'Undergraduate',
-              faculty: 'University of Ilorin',
-              followersCount: 0,
-              followingCount: 0,
-            });
           }
-        } catch {
-          setTargetProfileUser({
-            id: userId,
-            email: 'student@unilorin.edu.ng',
-            fullName: 'Campus Student',
-            username: `@student_${userId.slice(0, 5)}`,
-            role: 'student',
-            avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300',
-            bio: 'Undergraduate at University of Ilorin.',
-            level: '300L',
-            department: 'Undergraduate',
-            faculty: 'University of Ilorin',
-            followersCount: 0,
-            followingCount: 0,
-          });
-        }
+        } catch {}
         setCurrentModule('dashboard');
-      } else if (pathname !== '/' && pathname !== '') {
-        // Unrecognized path: catch-all redirect to home
-        console.log('Navigated to:', '/');
-        window.history.replaceState({}, '', '/');
-        setTargetProfileUser(null);
+      } else {
+        const path = location.pathname;
+        if (path.startsWith('/market')) setCurrentModule('marketplace');
+        else if (path.startsWith('/campus') || path.startsWith('/hubs')) setCurrentModule('campus');
+        else if (path.startsWith('/politics')) setCurrentModule('politics');
+        else if (path.startsWith('/academics')) setCurrentModule('academics');
+        else if (path.startsWith('/clubs')) setCurrentModule('clubs');
+        else if (path.startsWith('/news')) setCurrentModule('news');
+        else if (path.startsWith('/map')) setCurrentModule('map');
+        else if (path.startsWith('/profile') || path.startsWith('/dashboard')) setCurrentModule('dashboard');
+        else if (path === '/feed' || path === '/') setCurrentModule('feed');
       }
     };
 
     handleRouteChange();
-    window.addEventListener('popstate', handleRouteChange);
-    return () => window.removeEventListener('popstate', handleRouteChange);
-  }, [currentUser]);
+  }, [location.pathname, currentUser, navigate]);
 
   // Synchronize social posts & snaps data from Supabase backend
+  const syncSupabaseData = useCallback(async () => {
+    let isMounted = true;
+    setIsLoadingPosts(true);
+    setIsLoadingSnaps(true);
+    setPostsError(null);
+    setSnapsError(null);
+    try {
+      await Promise.all([
+        deletePostsByUserInSupabase('adeyiink7'),
+        deletePostsByUserInSupabase('adeyink7'),
+      ]);
+
+      const [remotePosts, remoteSnaps, pagePosts] = await Promise.all([
+        fetchCampusPostsFromSupabase(),
+        fetchCampusSnapsFromSupabase(),
+        fetchPagePostsFromSupabase(),
+      ]);
+
+      if (!isMounted) return;
+
+      const filteredPosts = (remotePosts || []).filter((p) => {
+        const user = (p.authorUsername || '').toLowerCase();
+        const name = (p.authorName || '').toLowerCase();
+        const id = (p.authorId || '').toLowerCase();
+        return !user.includes('adeyiink7') && !user.includes('adeyink7') &&
+               !name.includes('adeyiink7') && !name.includes('adeyink7') &&
+               !id.includes('adeyiink7') && !id.includes('adeyink7');
+      });
+
+      // Convert PagePosts into CampusPosts format
+      const convertedPagePosts: CampusPost[] = (pagePosts || []).map((pp) => ({
+        id: pp.id,
+        authorId: pp.authorId,
+        authorName: pp.pageName || 'Campus Page',
+        authorLevel: '300L',
+        authorRole: 'student',
+        content: pp.title ? `**${pp.title}**\n${pp.body}` : pp.body,
+        category: pp.kind === 'event' ? 'Events & Sports' : 'Gist & Social',
+        mediaUrl: pp.imageUrl,
+        likesCount: 5,
+        commentsCount: 2,
+        createdAt: pp.createdAt,
+        pageId: pp.pageId,
+        pageName: pp.pageName,
+        pageLogoUrl: pp.pageLogoUrl,
+        pageType: pp.pageType,
+        pageIsVerified: pp.pageIsVerified,
+        isBreaking: pp.isBreaking,
+      }));
+
+      const mergedPosts = [...convertedPagePosts, ...filteredPosts].sort(
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
+
+      setPosts(mergedPosts);
+      try {
+        localStorage.setItem(STORAGE_POSTS_KEY, JSON.stringify(mergedPosts));
+      } catch {}
+
+      setSnaps(remoteSnaps || []);
+      try {
+        localStorage.setItem(STORAGE_SNAPS_KEY, JSON.stringify(remoteSnaps || []));
+      } catch {}
+    } catch (err) {
+      console.warn('[Supabase Sync] Background data load warning:', err);
+      setPostsError("Couldn't load campus feed. Tap to retry.");
+      setSnapsError("Couldn't load snaps.");
+    } finally {
+      setIsLoadingPosts(false);
+      setIsLoadingSnaps(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (!isSupabaseConfigured) return;
-
-    let isMounted = true;
-
-    async function syncSupabaseData() {
-      try {
-        await Promise.all([
-          deletePostsByUserInSupabase('adeyiink7'),
-          deletePostsByUserInSupabase('adeyink7'),
-        ]);
-
-        const [remotePosts, remoteSnaps, pagePosts] = await Promise.all([
-          fetchCampusPostsFromSupabase(),
-          fetchCampusSnapsFromSupabase(),
-          fetchPagePostsFromSupabase(),
-        ]);
-
-        if (!isMounted) return;
-
-        const filteredPosts = (remotePosts || []).filter((p) => {
-          const user = (p.authorUsername || '').toLowerCase();
-          const name = (p.authorName || '').toLowerCase();
-          const id = (p.authorId || '').toLowerCase();
-          return !user.includes('adeyiink7') && !user.includes('adeyink7') &&
-                 !name.includes('adeyiink7') && !name.includes('adeyink7') &&
-                 !id.includes('adeyiink7') && !id.includes('adeyink7');
-        });
-
-        // Convert PagePosts into CampusPosts format
-        const convertedPagePosts: CampusPost[] = (pagePosts || []).map((pp) => ({
-          id: pp.id,
-          authorId: pp.authorId,
-          authorName: pp.pageName || 'Campus Page',
-          authorLevel: '300L',
-          authorRole: 'student',
-          content: pp.title ? `**${pp.title}**\n${pp.body}` : pp.body,
-          category: pp.kind === 'event' ? 'Events & Sports' : 'Gist & Social',
-          mediaUrl: pp.imageUrl,
-          likesCount: 5,
-          commentsCount: 2,
-          createdAt: pp.createdAt,
-          pageId: pp.pageId,
-          pageName: pp.pageName,
-          pageLogoUrl: pp.pageLogoUrl,
-          pageType: pp.pageType,
-          pageIsVerified: pp.pageIsVerified,
-          isBreaking: pp.isBreaking,
-        }));
-
-        const mergedPosts = [...convertedPagePosts, ...filteredPosts].sort(
-          (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-        );
-
-        setPosts(mergedPosts);
-        try {
-          localStorage.setItem(STORAGE_POSTS_KEY, JSON.stringify(mergedPosts));
-        } catch {}
-
-        setSnaps(remoteSnaps || []);
-        try {
-          localStorage.setItem(STORAGE_SNAPS_KEY, JSON.stringify(remoteSnaps || []));
-        } catch {}
-      } catch (err) {
-        console.warn('[Supabase Sync] Background data load warning:', err);
-      }
-    }
-
     syncSupabaseData();
-
-    return () => {
-      isMounted = false;
-    };
-  }, []);
+  }, [syncSupabaseData]);
 
   const handleNextSnap = useCallback(() => {
     setSelectedSnap((current) => {
@@ -475,10 +461,7 @@ function MainApp() {
   const handleViewUserProfile = (authorId?: string, authorDetails?: any) => {
     if (!authorId) return;
     const path = `/profile/${authorId}`;
-    console.log('Navigated path:', path);
-    if (typeof window !== 'undefined') {
-      window.history.pushState({}, '', path);
-    }
+    navigate(path);
 
     if (currentUser && authorId === currentUser.id) {
       setTargetProfileUser(currentUser);
@@ -584,7 +567,7 @@ function MainApp() {
         if (p.id === postId) {
           const nextState = !p.likedByMe;
           const newLikesCount = nextState ? p.likesCount + 1 : Math.max(0, p.likesCount - 1);
-          toggleCampusPostLikeInSupabase(postId, newLikesCount);
+          toggleCampusPostLikeInSupabase(postId);
           return {
             ...p,
             likedByMe: nextState,
@@ -735,14 +718,17 @@ function MainApp() {
           targetProfileUser={targetProfileUser}
           onClearTargetUser={() => {
             setTargetProfileUser(null);
-            console.log('Navigated to:', '/');
-            if (typeof window !== 'undefined') {
-              window.history.pushState({}, '', '/');
-            }
+            navigate('/feed');
           }}
           isLoadingBusinesses={isLoadingBusinesses}
           businessesError={businessesError}
           onRetryBusinesses={loadBusinesses}
+          isLoadingPosts={isLoadingPosts}
+          postsError={postsError}
+          onRetryPosts={syncSupabaseData}
+          isLoadingSnaps={isLoadingSnaps}
+          snapsError={snapsError}
+          onRetrySnaps={syncSupabaseData}
           onOpenAdminPages={() => setIsAdminPagesOpen(true)}
         />
       ) : (
@@ -801,6 +787,12 @@ function MainApp() {
                   onNavigateModule={(mod) => setCurrentModule(mod)}
                   onOpenAuthorProfile={handleViewUserProfile}
                   onDeletePost={handleDeletePost}
+                  isLoadingPosts={isLoadingPosts}
+                  postsError={postsError}
+                  onRetryPosts={syncSupabaseData}
+                  isLoadingSnaps={isLoadingSnaps}
+                  snapsError={snapsError}
+                  onRetrySnaps={syncSupabaseData}
                 />
               )}
 
@@ -897,6 +889,7 @@ function MainApp() {
         onNextSnap={handleNextSnap}
         onPrevSnap={handlePrevSnap}
         onOpenAuthorProfile={handleViewUserProfile}
+        onDeleteSnap={(deletedId) => setSnaps((prev) => prev.filter((s) => s.id !== deletedId))}
       />
 
       <CreateSnapModal

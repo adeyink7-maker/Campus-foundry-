@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useTransition } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { 
   X, 
   Search, 
@@ -127,6 +128,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
       localStorage.setItem(RECENT_SEARCHES_KEY, JSON.stringify(updated));
     }
   };
+  const navigate = useNavigate();
 
   const handleItemClick = (item: any) => {
     if (query.trim()) {
@@ -137,10 +139,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
     if (isPerson) {
       const path = `/profile/${item.id}`;
       console.log('Navigated path:', path);
-      if (typeof window !== 'undefined') {
-        window.history.pushState({}, '', path);
-        window.dispatchEvent(new PopStateEvent('popstate'));
-      }
+      navigate(path);
       if (onSelectUser) {
         onSelectUser({
           id: item.id,

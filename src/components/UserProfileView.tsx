@@ -57,7 +57,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
   onSelectBusiness,
 }) => {
   const { currentUser, toggleFollowUser, signOut, syncUserProfileFromSupabase, updateUser } = useAuth();
-  const { openChatDrawer } = useChat();
+  const { openChatWithUser } = useChat();
 
   const activeUser = targetUserProp || currentUser;
   const isOwner = Boolean(currentUser && activeUser && currentUser.id === activeUser.id);
@@ -105,7 +105,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
     : `@${activeUser.email.split('@')[0]}`;
 
   const universityName = activeUser.university || activeUser.campus || '';
-  const postsCount = userPosts.length + userSnaps.length;
+  const postsCount = userPosts.length;
   const followersCount = (activeUser.followersCount ?? 0) + (isFollowedLocal ? 1 : 0);
   const followingCount = activeUser.followingCount ?? 0;
   const productsCount = userBusinesses.length;
@@ -134,7 +134,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
       emitAppToast("You can't message yourself", 'error');
       return;
     }
-    openChatDrawer();
+    openChatWithUser(activeUser as AppUser);
   };
 
   const handleChangeCoverImage = () => {
@@ -477,12 +477,12 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
         {/* TAB 1: POSTS (3-column photo/video grid with text posts) */}
         {activeTab === 'posts' && (
           <div>
-            {userPosts.length === 0 && userSnaps.length === 0 ? (
+            {userPosts.length === 0 ? (
               <div className="flex flex-col items-center justify-center p-12 text-center bg-neutral-900/40 rounded-3xl border border-neutral-800">
                 <Grid className="h-10 w-10 text-neutral-600 mb-2" />
                 <h3 className="text-sm font-bold text-white mb-1">No Posts Yet</h3>
                 <p className="text-xs text-neutral-400 max-w-xs mb-4">
-                  {isOwner ? 'Share your first update or snap with peers.' : `${activeUser.fullName} has not posted anything yet.`}
+                  {isOwner ? 'Share your first update with peers.' : `${activeUser.fullName} has not posted anything yet.`}
                 </p>
                 {isOwner && onOpenCreatePost && (
                   <button

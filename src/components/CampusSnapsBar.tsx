@@ -7,12 +7,18 @@ interface CampusSnapsBarProps {
   snaps: CampusSnap[];
   onSelectSnap: (snap: CampusSnap) => void;
   onOpenCreateSnap: () => void;
+  isLoading?: boolean;
+  error?: string | null;
+  onRetry?: () => void;
 }
 
 export const CampusSnapsBar = ({
   snaps,
   onSelectSnap,
   onOpenCreateSnap,
+  isLoading = false,
+  error = null,
+  onRetry,
 }: CampusSnapsBarProps) => {
   const { currentUser } = useAuth();
 
@@ -62,7 +68,22 @@ export const CampusSnapsBar = ({
         </button>
 
         {/* List of active snaps */}
-        {snaps.length === 0 ? (
+        {isLoading && snaps.length === 0 ? (
+          /* Loading Skeletons */
+          [1, 2, 3].map((i) => (
+            <div key={i} className="flex flex-col items-center gap-1.5 shrink-0 animate-pulse">
+              <div className="h-15 w-15 rounded-2xl bg-neutral-800" />
+              <div className="h-2 w-10 rounded bg-neutral-800" />
+            </div>
+          ))
+        ) : error && snaps.length === 0 ? (
+          <button
+            onClick={onRetry}
+            className="flex items-center text-[10px] text-rose-400 font-bold px-3 py-1 bg-rose-500/10 rounded-lg border border-rose-500/20"
+          >
+            Retry Snaps
+          </button>
+        ) : snaps.length === 0 ? (
           <div className="flex items-center text-xs text-neutral-500 italic px-3">
             Nothing here yet
           </div>
@@ -74,7 +95,11 @@ export const CampusSnapsBar = ({
               onClick={() => onSelectSnap(snap)}
               className="flex flex-col items-center gap-1.5 shrink-0 group cursor-pointer"
             >
-              <div className="relative flex h-15 w-15 items-center justify-center rounded-2xl bg-gradient-to-tr from-amber-500 via-rose-500 to-emerald-500 p-[2px] group-hover:scale-105 transition-transform shadow-md">
+              <div className={`relative flex h-15 w-15 items-center justify-center rounded-2xl p-[2px] group-hover:scale-105 transition-transform shadow-md ${
+                snap.hasSeen
+                  ? 'bg-neutral-800'
+                  : 'bg-gradient-to-tr from-amber-500 via-rose-500 to-emerald-500'
+              }`}>
                 <img
                   src={snap.mediaUrl}
                   alt={snap.caption}

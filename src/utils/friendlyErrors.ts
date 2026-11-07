@@ -22,6 +22,7 @@ export type FriendlyErrorContext =
   | 'store'
   | 'upload'
   | 'profile'
+  | 'follow'
   | 'general';
 
 /**
@@ -248,11 +249,13 @@ export function getFriendlyError(error: unknown, context?: FriendlyErrorContext 
   if (context === 'upload') {
     return "We couldn't upload your file right now. Please try again.";
   }
+  if (context === 'follow') {
+    return "We couldn't update follow status right now. Please try again.";
+  }
   if (context === 'profile') {
     return "We couldn't update your profile right now. Please try again.";
   }
 
-  // 7. Server / 500 / unknown / technical terms fallback
-  // Strip any accidental database or environment words if any slip through
-  return 'Something went wrong on our side. Please try again in a moment.';
+  // 7. Return the real message for other cases
+  return raw || 'Something went wrong. Please try again in a moment.';
 }

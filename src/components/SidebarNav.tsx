@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence, PanInfo } from 'framer-motion';
 import { 
   Home, 
@@ -160,8 +161,11 @@ export const SidebarNav = ({
     },
   ];
 
+  const navigate = useNavigate();
   const handleItemClick = (module: AppModule) => {
-    onSelectModule(module);
+    if (module === 'feed') navigate('/feed');
+    else if (module === 'dashboard') navigate('/profile');
+    else navigate('/' + module);
     setIsMobileMenuOpen(false);
   };
 
