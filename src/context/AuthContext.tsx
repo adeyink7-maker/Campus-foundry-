@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
-import { supabase, isSupabaseConfigured, emitAppToast } from '../services/supabase';
+import { supabase, isSupabaseConfigured, emitAppToast, ALLOWED_PROFILES_READ_COLUMNS } from '../services/supabase';
 import { getFriendlyError } from '../utils/friendlyErrors';
 import { AppUser, UserRole, AccountType, TraderProfile, StudentBusiness, StudentLevel } from '../types';
 import { 
@@ -118,14 +118,21 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const syncUserProfileFromSupabase = async (userId: string): Promise<AppUser | null> => {
     try {
-      const { data: profile, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .maybeSingle();
+      // Own full profile must come from get_my_profile RPC
+      const { data: myProfile, error: rpcError } = await supabase.rpc('get_my_profile');
+      let profile = myProfile;
 
-      if (error && error.code !== 'PGRST116') {
-        console.warn('[Supabase] Could not fetch profile from table:', error.message);
+      if (!profile) {
+        const { data: fallbackProfile, error: tableError } = await supabase
+          .from('profiles')
+          .select(ALLOWED_PROFILES_READ_COLUMNS)
+          .eq('id', userId)
+          .maybeSingle();
+
+        if (tableError && tableError.code !== 'PGRST116') {
+          console.warn('[Supabase] Could not fetch profile from table:', tableError.message);
+        }
+        profile = fallbackProfile;
       }
 
       const { data: { session } } = await supabase.auth.getSession();

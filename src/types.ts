@@ -110,6 +110,7 @@ export interface VerificationRequest {
   reviewedAt?: string;
   createdAt: string;
   applicantName?: string;
+  applicantUsername?: string;
   applicantEmail?: string;
   applicantFaculty?: string;
   applicantDepartment?: string;
@@ -701,7 +702,7 @@ export interface Product {
   businessWhatsapp?: string;
 }
 
-export type OrderStatus = 'placed' | 'accepted' | 'preparing' | 'in_transit' | 'delivered' | 'cancelled';
+export type OrderStatus = 'pending' | 'placed' | 'accepted' | 'preparing' | 'in_transit' | 'delivered' | 'cancelled';
 export type PaymentMethod = 'cash_on_delivery' | 'transfer';
 
 export interface OrderItem {

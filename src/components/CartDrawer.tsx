@@ -77,6 +77,18 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
     }
   }, [currentUser]);
 
+  // Group current cart items by business
+  const groupedCartItems = React.useMemo(() => {
+    const map = new Map<string, { businessName: string; items: typeof cartItems }>();
+    for (const item of cartItems) {
+      const bizId = item.businessId;
+      const existing = map.get(bizId) || { businessName: item.businessName || 'Campus Store', items: [] };
+      existing.items.push(item);
+      map.set(bizId, existing);
+    }
+    return Array.from(map.entries());
+  }, [cartItems]);
+
   if (!isCartOpen && placedOrders.length === 0 && !trackedOrder) return null;
 
   const handleConfirmOrder = async (e: React.FormEvent) => {
@@ -142,18 +154,6 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
       console.error('Failed to open chat with trader:', err);
     }
   };
-
-  // Group current cart items by business
-  const groupedCartItems = React.useMemo(() => {
-    const map = new Map<string, { businessName: string; items: typeof cartItems }>();
-    for (const item of cartItems) {
-      const bizId = item.businessId;
-      const existing = map.get(bizId) || { businessName: item.businessName || 'Campus Store', items: [] };
-      existing.items.push(item);
-      map.set(bizId, existing);
-    }
-    return Array.from(map.entries());
-  }, [cartItems]);
 
   return (
     <>

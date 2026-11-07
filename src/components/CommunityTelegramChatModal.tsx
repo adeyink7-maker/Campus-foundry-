@@ -152,7 +152,16 @@ export const CommunityTelegramChatModal: React.FC<CommunityTelegramChatModalProp
 
   if (!isOpen) return null;
 
-  const isAdmin = true; // User possesses admin permissions for management testing
+  const currentUserMember = currentUser ? members.find((m) => m.id === currentUser.id || m.username === `@${currentUser.username}`) : null;
+  const isAdmin = Boolean(
+    currentUser && (
+      currentUser.isAdmin || 
+      currentUser.staffRole === 'super_admin' || 
+      currentUser.staffRole === 'page_moderator' || 
+      currentUserMember?.role === 'admin' || 
+      currentUserMember?.role === 'moderator'
+    )
+  );
 
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();

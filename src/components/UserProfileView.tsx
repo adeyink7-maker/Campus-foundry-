@@ -102,7 +102,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
     ? activeUser.username.startsWith('@')
       ? activeUser.username
       : `@${activeUser.username}`
-    : `@${activeUser.email.split('@')[0]}`;
+    : (activeUser.email ? `@${activeUser.email.split('@')[0]}` : `@student_${activeUser.id.slice(0, 5)}`);
 
   const universityName = activeUser.university || activeUser.campus || '';
   const postsCount = userPosts.length;

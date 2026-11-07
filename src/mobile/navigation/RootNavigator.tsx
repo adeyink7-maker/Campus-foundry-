@@ -92,8 +92,18 @@ import { MyStoreModal } from '../../components/MyStoreModal';
 import { ProfileAvatarSheet } from '../../components/ProfileAvatarSheet';
 import { uploadMedia } from '../../services/supabase';
 
-export type MobileTab = 'feed' | 'market' | 'campus' | 'chats' | 'profile';
+export type MobileTab = 'feed' | 'market' | 'campus' | 'alerts' | 'chats' | 'profile';
 export type CampusSubHub = 'politics' | 'academics' | 'clubs' | 'news' | 'map' | 'idcard' | null;
+
+export interface CampusAlertItem {
+  id: string;
+  type: 'like' | 'comment' | 'follow' | 'dm' | 'verification' | 'announcement';
+  title: string;
+  description: string;
+  timestamp: string;
+  isUnread: boolean;
+  avatarUrl?: string;
+}
 
 export interface RootNavigatorProps {
   businesses?: StudentBusiness[];
@@ -179,10 +189,101 @@ export const RootNavigator: React.FC<RootNavigatorProps> = ({
   const activeTab = useMemo<MobileTab>(() => {
     if (location.pathname.startsWith('/market')) return 'market';
     if (location.pathname.startsWith('/hubs') || location.pathname.startsWith('/campus')) return 'campus';
+    if (location.pathname.startsWith('/alerts') || location.pathname.startsWith('/notifications')) return 'alerts';
     if (location.pathname.startsWith('/chats')) return 'chats';
     if (location.pathname.startsWith('/profile')) return 'profile';
     return 'feed';
   }, [location]);
+
+  // Notifications / Alerts State
+  const [alerts, setAlerts] = useState<CampusAlertItem[]>([
+    {
+      id: 'alt_1',
+      type: 'like',
+      title: 'Fatima Bello liked your post',
+      description: '"Looking for past questions for CSC 301 second semester exams..."',
+      timestamp: '2m ago',
+      isUnread: true,
+      avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100',
+    },
+    {
+      id: 'alt_2',
+      type: 'comment',
+      title: 'Kofi Mensah commented on your snap',
+      description: '"Is hostel delivery available for Tanke Zone B tonight?"',
+      timestamp: '15m ago',
+      isUnread: true,
+      avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100',
+    },
+    {
+      id: 'alt_3',
+      type: 'follow',
+      title: 'Adeyinka S. started following you',
+      description: 'Connected with your student founder profile on UNILORIN Campus Foundry.',
+      timestamp: '45m ago',
+      isUnread: true,
+      avatarUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=100',
+    },
+    {
+      id: 'alt_4',
+      type: 'dm',
+      title: 'New message from Tanke Electronics',
+      description: '"Your order for 65W GaN Fast Charger has been packed and dispatched."',
+      timestamp: '2h ago',
+      isUnread: false,
+      avatarUrl: 'https://images.unsplash.com/photo-1581092160607-ee22621dd758?w=100',
+    },
+    {
+      id: 'alt_5',
+      type: 'verification',
+      title: 'Verification Status Approved',
+      description: 'Your UNILORIN Webmail Verification is active & official student badge has been updated.',
+      timestamp: '5h ago',
+      isUnread: false,
+      avatarUrl: 'https://images.unsplash.com/photo-1617347454431-f49d7ff5c3b1?w=100',
+    },
+    {
+      id: 'alt_6',
+      type: 'announcement',
+      title: 'SUG UNECOM Announcement',
+      description: 'Official SUG Presidential Debate Schedule published in Politics & Campaign Hub.',
+      timestamp: '1d ago',
+      isUnread: false,
+      avatarUrl: 'https://images.unsplash.com/photo-1541872703-74c5e44368f9?w=100',
+    },
+  ]);
+
+  const [alertFilter, setAlertFilter] = useState<'all' | 'likes' | 'comments' | 'followers' | 'dms' | 'announcements'>('all');
+
+  const unreadAlertsCount = useMemo(() => alerts.filter((a) => a.isUnread).length, [alerts]);
+
+  const handleMarkAllAlertsRead = () => {
+    setAlerts((prev) => prev.map((a) => ({ ...a, isUnread: false })));
+  };
+
+  const filteredNotifications = useMemo(() => {
+    if (alertFilter === 'all') return alerts;
+    if (alertFilter === 'likes') return alerts.filter((a) => a.type === 'like');
+    if (alertFilter === 'comments') return alerts.filter((a) => a.type === 'comment');
+    if (alertFilter === 'followers') return alerts.filter((a) => a.type === 'follow');
+    if (alertFilter === 'dms') return alerts.filter((a) => a.type === 'dm');
+    if (alertFilter === 'announcements') return alerts.filter((a) => a.type === 'announcement' || a.type === 'verification');
+    return alerts;
+  }, [alerts, alertFilter]);
+
+  const handleNotificationClick = (item: CampusAlertItem) => {
+    setAlerts((prev) => prev.map((a) => (a.id === item.id ? { ...a, isUnread: false } : a)));
+
+    if (item.type === 'dm') {
+      navigateToTab('chats');
+    } else if (item.type === 'announcement') {
+      navigateToTab('campus');
+    } else if (item.type === 'follow') {
+      navigateToTab('profile');
+    } else {
+      navigateToTab('feed');
+    }
+  };
 
   const [viewingProfileUser, setViewingProfileUser] = useState<AppUser | null>(null);
   const [isProfileLoading, setIsProfileLoading] = useState(false);
@@ -652,7 +753,7 @@ export const RootNavigator: React.FC<RootNavigatorProps> = ({
                   </div>
                   <h3 className="text-sm font-bold text-white">Unable to load feed</h3>
                   <p className="text-xs text-neutral-400 max-w-xs mx-auto">
-                    Check your connection or student portal session and try again.
+                    {postsError || 'Check your connection or student portal session and try again.'}
                   </p>
                   <button
                     type="button"
@@ -839,7 +940,7 @@ export const RootNavigator: React.FC<RootNavigatorProps> = ({
                     <AlertCircle className="w-6 h-6" />
                   </div>
                   <h4 className="text-sm font-bold text-white">Unable to load campus traders</h4>
-                  <p className="text-xs text-neutral-400 mt-1 mb-4">Please check your connection and try again.</p>
+                  <p className="text-xs text-neutral-400 mt-1 mb-4">{businessesError || 'Please check your connection and try again.'}</p>
                   <button
                     type="button"
                     onClick={onRetryBusinesses}
@@ -1231,9 +1332,114 @@ export const RootNavigator: React.FC<RootNavigatorProps> = ({
           )}
 
           {/* ========================================================== */}
+          {/* TAB: 🔔 ALERTS & NOTIFICATIONS                             */}
           {/* ========================================================== */}
-          {/* TAB 5: 🎓 STUDENT ID & FOUNDER DASHBOARD                  */}
-          {/* ========================================================== */}
+          {activeTab === 'alerts' && (
+            <div className="space-y-4 animate-in fade-in duration-200">
+              <div className="flex items-center justify-between p-4 rounded-2xl bg-neutral-900 border border-neutral-800">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400">
+                    <Bell className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h2 className="text-sm font-extrabold text-white flex items-center gap-2">
+                      <span>Notifications & Alerts</span>
+                      {unreadAlertsCount > 0 && (
+                        <span className="px-2 py-0.5 rounded-full bg-amber-500 text-neutral-950 text-[10px] font-black">
+                          {unreadAlertsCount} NEW
+                        </span>
+                      )}
+                    </h2>
+                    <p className="text-[11px] text-neutral-400">
+                      Likes, comments, followers, DMs, verification & hub announcements
+                    </p>
+                  </div>
+                </div>
+
+                {unreadAlertsCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleMarkAllAlertsRead}
+                    className="text-xs font-bold text-amber-400 hover:text-amber-300 px-3 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 transition-colors cursor-pointer"
+                  >
+                    Mark all read
+                  </button>
+                )}
+              </div>
+
+              {/* Filter Chips */}
+              <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
+                {(['all', 'likes', 'comments', 'followers', 'dms', 'announcements'] as const).map((filter) => (
+                  <button
+                    key={filter}
+                    type="button"
+                    onClick={() => setAlertFilter(filter)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold capitalize whitespace-nowrap transition-all cursor-pointer ${
+                      alertFilter === filter
+                        ? 'bg-amber-500 text-neutral-950 shadow-md'
+                        : 'bg-neutral-900 text-neutral-400 hover:text-white border border-neutral-800'
+                    }`}
+                  >
+                    {filter}
+                  </button>
+                ))}
+              </div>
+
+              {/* Notification Items List */}
+              <div className="space-y-2.5">
+                {filteredNotifications.length === 0 ? (
+                  <div className="p-10 text-center bg-neutral-900/40 rounded-2xl border border-neutral-800 space-y-2">
+                    <Bell className="w-8 h-8 text-neutral-500 mx-auto" />
+                    <h4 className="text-sm font-bold text-white">No notifications in this filter</h4>
+                    <p className="text-xs text-neutral-400">You're all caught up with campus updates!</p>
+                  </div>
+                ) : (
+                  filteredNotifications.map((item) => (
+                    <div
+                      key={item.id}
+                      onClick={() => handleNotificationClick(item)}
+                      className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex items-start gap-3 ${
+                        item.isUnread
+                          ? 'bg-neutral-900 border-amber-500/30 hover:border-amber-500/60'
+                          : 'bg-neutral-900/50 border-neutral-800/80 hover:bg-neutral-900'
+                      }`}
+                    >
+                      {/* Type Avatar/Icon */}
+                      <div className="relative shrink-0">
+                        <img
+                          src={item.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100'}
+                          alt="Sender"
+                          className="w-10 h-10 rounded-full object-cover border border-neutral-800"
+                        />
+                        <div className="absolute -bottom-1 -right-1 p-1 rounded-full bg-neutral-950 border border-neutral-800">
+                          {item.type === 'like' && <Heart className="w-3 h-3 text-rose-500 fill-rose-500" />}
+                          {item.type === 'comment' && <MessageSquare className="w-3 h-3 text-sky-400" />}
+                          {item.type === 'follow' && <User className="w-3 h-3 text-indigo-400" />}
+                          {item.type === 'dm' && <MessageSquare className="w-3 h-3 text-emerald-400" />}
+                          {item.type === 'verification' && <ShieldCheck className="w-3 h-3 text-amber-400" />}
+                          {item.type === 'announcement' && <Sparkles className="w-3 h-3 text-amber-400" />}
+                        </div>
+                      </div>
+
+                      {/* Notification Text */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-2 mb-0.5">
+                          <h4 className="text-xs font-bold text-white truncate">{item.title}</h4>
+                          <span className="text-[10px] text-neutral-500 font-mono shrink-0">{item.timestamp}</span>
+                        </div>
+                        <p className="text-xs text-neutral-300 leading-snug">{item.description}</p>
+                      </div>
+
+                      {item.isUnread && (
+                        <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0 self-center" />
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+
           {/* ========================================================== */}
           {/* TAB 5: 👤 STUDENT SOCIAL PROFILE                           */}
           {/* ========================================================== */}
@@ -1297,20 +1503,19 @@ export const RootNavigator: React.FC<RootNavigatorProps> = ({
             </div>
           )}
 
-
         </div>
       </div>
 
-      {/* BOTTOM TAB BAR NAVIGATION */}
+      {/* BOTTOM TAB BAR NAVIGATION (SYMMETRICAL 7-COLUMN GRID) */}
       <nav 
         className="fixed bottom-0 left-0 right-0 h-16 bg-neutral-950/95 backdrop-blur-md border-t border-neutral-800/80 z-30"
         style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
       >
         <div 
-          className="max-w-4xl mx-auto h-full grid grid-cols-5 w-full"
-          style={{ gridTemplateColumns: 'repeat(5, 1fr)' }}
+          className="max-w-4xl mx-auto h-full grid grid-cols-7 w-full"
+          style={{ gridTemplateColumns: 'repeat(7, 1fr)' }}
         >
-          {/* COLUMN 1: FEED */}
+          {/* TAB 1: FEED */}
           <button
             type="button"
             onClick={() => navigateToTab('feed')}
@@ -1322,7 +1527,7 @@ export const RootNavigator: React.FC<RootNavigatorProps> = ({
             </span>
           </button>
 
-          {/* COLUMN 2: MARKET */}
+          {/* TAB 2: MARKET */}
           <button
             type="button"
             onClick={() => navigateToTab('market')}
@@ -1334,19 +1539,7 @@ export const RootNavigator: React.FC<RootNavigatorProps> = ({
             </span>
           </button>
 
-          {/* COLUMN 3: CENTER QUICK ACTION FAB (+) */}
-          <div className="flex flex-col items-center justify-center h-full w-full col-span-1 relative">
-            <button
-              type="button"
-              onClick={() => setIsActionSheetOpen(true)}
-              className="relative -top-3.5 w-[56px] h-[56px] min-w-[56px] min-h-[56px] rounded-full bg-gradient-to-tr from-amber-500 to-amber-400 text-neutral-950 flex items-center justify-center shadow-xl shadow-amber-500/30 transition-transform active:scale-95 border-2 border-neutral-950 cursor-pointer"
-              title="Campus Quick Action"
-            >
-              <Plus className="w-[26px] h-[26px] stroke-[2.5] block p-0 text-neutral-950" />
-            </button>
-          </div>
-
-          {/* COLUMN 4: CAMPUS HUBS */}
+          {/* TAB 3: HUBS */}
           <button
             type="button"
             onClick={() => navigateToTab('campus')}
@@ -1358,7 +1551,36 @@ export const RootNavigator: React.FC<RootNavigatorProps> = ({
             </span>
           </button>
 
-          {/* COLUMN 5: CHATS */}
+          {/* TAB 4: CENTER QUICK ACTION FAB (+) */}
+          <div className="flex flex-col items-center justify-center h-full w-full col-span-1 relative">
+            <button
+              type="button"
+              onClick={() => setIsActionSheetOpen(true)}
+              className="relative -top-3.5 w-[52px] h-[52px] min-w-[52px] min-h-[52px] rounded-full bg-gradient-to-tr from-amber-500 to-amber-400 text-neutral-950 flex items-center justify-center shadow-xl shadow-amber-500/30 transition-transform active:scale-95 border-2 border-neutral-950 cursor-pointer"
+              title="Campus Quick Action"
+            >
+              <Plus className="w-[26px] h-[26px] stroke-[2.5] block p-0 text-neutral-950" />
+            </button>
+          </div>
+
+          {/* TAB 5: ALERTS */}
+          <button
+            type="button"
+            onClick={() => navigateToTab('alerts')}
+            className="flex flex-col items-center justify-center h-full w-full col-span-1 transition-transform active:scale-95 cursor-pointer"
+          >
+            <div className="relative flex items-center justify-center">
+              <Bell className={`w-[22px] h-[22px] transition-colors ${activeTab === 'alerts' ? 'text-amber-400' : 'text-neutral-400'}`} />
+              {unreadAlertsCount > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-amber-500 rounded-full border-2 border-neutral-950" />
+              )}
+            </div>
+            <span className={`text-[10px] font-bold mt-1 leading-none ${activeTab === 'alerts' ? 'text-amber-400' : 'text-neutral-400'}`}>
+              Alerts
+            </span>
+          </button>
+
+          {/* TAB 6: CHATS */}
           <button
             type="button"
             onClick={() => navigateToTab('chats')}
@@ -1377,6 +1599,17 @@ export const RootNavigator: React.FC<RootNavigatorProps> = ({
             </span>
           </button>
 
+          {/* TAB 7: PROFILE */}
+          <button
+            type="button"
+            onClick={() => navigateToTab('profile')}
+            className="flex flex-col items-center justify-center h-full w-full col-span-1 transition-transform active:scale-95 cursor-pointer"
+          >
+            <User className={`w-[22px] h-[22px] transition-colors ${activeTab === 'profile' ? 'text-amber-400' : 'text-neutral-400'}`} />
+            <span className={`text-[10px] font-bold mt-1 leading-none ${activeTab === 'profile' ? 'text-amber-400' : 'text-neutral-400'}`}>
+              Profile
+            </span>
+          </button>
         </div>
       </nav>
 

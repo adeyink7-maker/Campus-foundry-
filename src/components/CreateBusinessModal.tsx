@@ -18,7 +18,7 @@ import {
 import { StudentBusiness, StudentServiceItem } from '../types';
 import { CATEGORIES, CAMPUS_ZONES, ALL_UNILORIN_HOSTELS } from '../data/mockData';
 import { useAuth } from '../context/AuthContext';
-import { supabase, isSupabaseConfigured } from '../services/supabase';
+import { supabase, isSupabaseConfigured, ALLOWED_STUDENT_BUSINESSES_READ_COLUMNS } from '../services/supabase';
 import { mapMarketplaceError } from '../services/marketplace';
 import { HostelSelectMenu } from './HostelSelectMenu';
 import { FacultyDepartmentSelector } from './FacultyDepartmentSelector';
@@ -335,7 +335,7 @@ export const CreateBusinessModal = ({
             badge: 'New Student Venture',
             verified_student: true,
           })
-          .select('*')
+          .select(ALLOWED_STUDENT_BUSINESSES_READ_COLUMNS)
           .single();
 
         if (insertError) {

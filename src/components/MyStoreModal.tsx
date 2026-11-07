@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { 
+  CreditCard,
   X, 
   Store, 
   Plus, 
@@ -32,6 +33,7 @@ import {
   fetchTraderOrders,
   updateOrderStatus,
   confirmDelivery,
+  updateOrderPaymentStatus,
   fetchDashboardStats,
   subscribeToTraderOrders
 } from '../services/marketplace';
@@ -116,6 +118,39 @@ export const MyStoreModal: React.FC<MyStoreModalProps> = ({
 
   // Action status toast
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Owner bank details loaded via get_payment_details RPC
+  const [bankDetails, setBankDetails] = useState<{
+    bank_name?: string;
+    account_number?: string;
+    account_name?: string;
+  } | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    async function loadPaymentDetails() {
+      if (isOpen && isSupabaseConfigured && myStore?.id) {
+        try {
+          const { data } = await supabase.rpc('get_payment_details', { p_business: myStore.id });
+          if (isMounted) {
+            if (data) {
+              setBankDetails({
+                bank_name: data.bank_name || undefined,
+                account_number: data.account_number || undefined,
+                account_name: data.account_name || undefined,
+              });
+            } else {
+              setBankDetails(null);
+            }
+          }
+        } catch {
+          if (isMounted) setBankDetails(null);
+        }
+      }
+    }
+    loadPaymentDetails();
+    return () => { isMounted = false; };
+  }, [isOpen, myStore?.id]);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -368,6 +403,19 @@ export const MyStoreModal: React.FC<MyStoreModalProps> = ({
       setCancelError(mapMarketplaceError(err));
     } finally {
       setIsCancelling(false);
+    }
+  };
+
+  // Trader updates payment_status directly
+  const handleUpdatePaymentStatus = async (orderId: string, paymentStatus: 'pending' | 'paid' | 'failed' | 'refunded') => {
+    try {
+      await updateOrderPaymentStatus(orderId, paymentStatus);
+      setOrders((prev: MarketplaceOrder[]) =>
+        prev.map((o) => (o.id === orderId ? { ...o, paymentStatus } : o))
+      );
+      showToast(`Payment status updated to ${paymentStatus}.`);
+    } catch (err: unknown) {
+      showToast(mapMarketplaceError(err));
     }
   };
 
@@ -1034,8 +1082,19 @@ export const MyStoreModal: React.FC<MyStoreModalProps> = ({
                                   Notes: "{order.notes}"
                                 </p>
                               )}
-                              <div className="text-[11px] text-neutral-400 pt-1">
-                                Payment: <strong className="text-white capitalize">{order.paymentMethod === 'transfer' ? 'Bank Transfer' : 'Pay on Delivery'}</strong> ({order.paymentStatus || 'pending'})
+                              <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-neutral-400 pt-1">
+                                <span>Payment: <strong className="text-white capitalize">{order.paymentMethod === 'transfer' ? 'Bank Transfer' : 'Pay on Delivery'}</strong></span>
+                                <select
+                                  value={order.paymentStatus || 'pending'}
+                                  onChange={(e) => handleUpdatePaymentStatus(order.id, e.target.value as any)}
+                                  className="bg-neutral-800 text-amber-300 font-bold px-2 py-0.5 rounded border border-neutral-700 text-[10px] cursor-pointer"
+                                  title="Update payment status"
+                                >
+                                  <option value="pending">Pending</option>
+                                  <option value="paid">Paid</option>
+                                  <option value="failed">Failed</option>
+                                  <option value="refunded">Refunded</option>
+                                </select>
                               </div>
                             </div>
 
@@ -1181,6 +1240,36 @@ export const MyStoreModal: React.FC<MyStoreModalProps> = ({
                     >
                       30 Days
                     </button>
+                  </div>
+                </div>
+
+                {/* Owner Bank Payout Card (via get_payment_details RPC) */}
+                <div className="p-4 rounded-2xl bg-neutral-950 border border-orange-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="p-3 rounded-xl bg-orange-500/10 border border-orange-500/20 text-orange-400">
+                      <CreditCard className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
+                        <span>Owner Bank Details</span>
+                        <span className="px-1.5 py-0.5 rounded text-[10px] bg-orange-500/10 text-orange-300 font-normal">RPC Secured</span>
+                      </h4>
+                      <p className="text-[11px] text-neutral-400">Destination for bank transfers & direct payouts</p>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-3 text-xs w-full sm:w-auto bg-neutral-900 px-4 py-2.5 rounded-xl border border-neutral-800">
+                    <div>
+                      <span className="text-[10px] text-neutral-500 block uppercase font-semibold">Bank Name</span>
+                      <span className="font-semibold text-white">{bankDetails?.bank_name || 'Not Configured'}</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-neutral-500 block uppercase font-semibold">Account Number</span>
+                      <span className="font-mono font-semibold text-orange-400">{bankDetails?.account_number || 'Not Configured'}</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-neutral-500 block uppercase font-semibold">Account Name</span>
+                      <span className="font-semibold text-white">{bankDetails?.account_name || 'Not Configured'}</span>
+                    </div>
                   </div>
                 </div>
 

@@ -557,7 +557,7 @@ export const BusinessDirectory = ({
           </div>
           <h3 className="text-lg font-bold text-white">Unable to load campus traders</h3>
           <p className="mt-2 text-xs sm:text-sm text-neutral-400 max-w-md mx-auto leading-relaxed">
-            Please check your network connection and try again.
+            {error || 'Please check your network connection and try again.'}
           </p>
           <div className="mt-6 flex justify-center">
             <button

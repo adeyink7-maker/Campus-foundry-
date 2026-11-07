@@ -24,10 +24,19 @@ export function formatNaira(amount: number | null | undefined): string {
 }
 
 /**
- * Friendly error messages mapped from Supabase backend codes / RPC exceptions
+ * Real error messages returned from Supabase backend codes / RPC exceptions
  */
 export function mapMarketplaceError(err: unknown): string {
-  return getFriendlyError(err, 'marketplace');
+  if (!err) return 'Something went wrong. Please try again.';
+  if (typeof err === 'string') return err;
+  if (err instanceof Error) return err.message;
+  if (typeof err === 'object' && err !== null) {
+    const obj = err as Record<string, unknown>;
+    if (obj.message && typeof obj.message === 'string') return obj.message;
+    if (obj.error && typeof obj.error === 'string') return obj.error;
+    if (obj.details && typeof obj.details === 'string') return obj.details;
+  }
+  return String(err);
 }
 
 // ==========================================
@@ -580,6 +589,36 @@ export async function confirmDelivery(orderId: string, pin: string): Promise<boo
   return confirmDeliveryRPC(orderId, pin);
 }
 
+/**
+ * Only traders set payment_status on orders.
+ */
+export async function updateOrderPaymentStatus(
+  orderId: string,
+  paymentStatus: 'pending' | 'paid' | 'failed' | 'refunded'
+): Promise<void> {
+  if (!isSupabaseConfigured) {
+    throw new Error('Supabase is not configured.');
+  }
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) {
+    throw new Error('You must be signed in as a trader to update payment status.');
+  }
+
+  const { error } = await supabase
+    .from('orders')
+    .update({
+      payment_status: paymentStatus,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', orderId)
+    .eq('trader_id', user.id);
+
+  if (error) {
+    console.error('[Marketplace updateOrderPaymentStatus Error]:', error);
+    throw new Error(mapMarketplaceError(error));
+  }
+}
+
 export async function getDeliveryPin(orderId: string): Promise<string | null> {
   if (!isSupabaseConfigured || !orderId) return null;
 
@@ -787,16 +826,13 @@ export async function fetchOrderPlacedDetails(orderId: string): Promise<PlacedOr
     };
 
     if (orderRow.business_id) {
-      const { data: rawBiz } = await supabase
-        .from('student_businesses')
-        .select('*')
-        .eq('id', orderRow.business_id)
-        .maybeSingle();
+      const { data: payData, error: payErr } = await supabase
+        .rpc('get_payment_details', { p_business: orderRow.business_id });
 
-      if (rawBiz) {
-        const bName = rawBiz.bank_name || rawBiz.bank || rawBiz.bankName;
-        const aNum = rawBiz.account_number || rawBiz.account_no || rawBiz.accountNumber;
-        const aName = rawBiz.account_name || rawBiz.accountName;
+      if (!payErr && payData) {
+        const bName = payData.bank_name;
+        const aNum = payData.account_number;
+        const aName = payData.account_name;
         if (bName || aNum) {
           bankDetails = {
             hasBank: true,
@@ -1349,6 +1385,23 @@ export interface CreateReviewParams {
 export async function createReview(params: CreateReviewParams): Promise<MarketplaceReview> {
   if (!isSupabaseConfigured) {
     throw new Error('Supabase is not configured.');
+  }
+
+  // Reviews are allowed only after an order is delivered
+  if (params.orderId) {
+    const { data: orderData, error: orderErr } = await supabase
+      .from('orders')
+      .select('status')
+      .eq('id', params.orderId)
+      .maybeSingle();
+
+    if (orderErr) {
+      throw new Error(mapMarketplaceError(orderErr));
+    }
+
+    if (!orderData || orderData.status !== 'delivered') {
+      throw new Error('Reviews are allowed only after an order is delivered.');
+    }
   }
 
   const payload = {

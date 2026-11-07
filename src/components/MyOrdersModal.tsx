@@ -110,7 +110,7 @@ export const MyOrdersModal: React.FC<MyOrdersModalProps> = ({ isOpen, onClose, i
       await updateOrderStatus({
         orderId,
         status: 'cancelled',
-        reason: 'Cancelled by buyer while placed.',
+        reason: 'Cancelled by buyer while pending.',
       });
       await loadOrders();
     } catch (err: unknown) {
@@ -423,8 +423,8 @@ export const MyOrdersModal: React.FC<MyOrdersModalProps> = ({ isOpen, onClose, i
                   )}
                 </div>
 
-                {/* Buyer Actions: CANCEL ORDER BUTTON ONLY WHILE STATUS IS 'placed' */}
-                {selectedOrder.status === 'placed' && (
+                {/* Buyer Actions: CANCEL ORDER BUTTON ONLY WHILE STATUS IS PENDING */}
+                {(selectedOrder.status === 'pending' || selectedOrder.status === 'placed') && (
                   <div className="pt-1">
                     <button
                       type="button"

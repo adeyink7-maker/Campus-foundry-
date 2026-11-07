@@ -213,9 +213,9 @@ export const AdminVerificationModal = ({
                           </span>
                         </div>
 
-                        {req.applicantEmail && (
+                        {req.applicantUsername && (
                           <p className="text-xs font-mono text-neutral-400">
-                            {req.applicantEmail}
+                            @{req.applicantUsername}
                           </p>
                         )}
 

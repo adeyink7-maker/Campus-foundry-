@@ -209,7 +209,7 @@ export const StaffManagementModal: React.FC<StaffManagementModalProps> = ({
                             </span>
                           </div>
                           <span className="text-xs text-neutral-400 font-mono">
-                            @{user.username || user.email} • {user.department || 'Student'}
+                            @{user.username || 'student'} • {user.department || 'Student'}
                           </span>
                         </div>
                       </div>

@@ -387,7 +387,7 @@ export const PlayerCardOverlay: React.FC<PlayerCardOverlayProps> = ({ onOpenProf
                         )}
                       </h2>
                       <span className="text-xs font-mono font-bold text-neutral-400">
-                        {activeUser.username || `@${activeUser.email.split('@')[0]}`}
+                        {activeUser.username ? (activeUser.username.startsWith('@') ? activeUser.username : `@${activeUser.username}`) : '@student'}
                       </span>
                     </div>
 

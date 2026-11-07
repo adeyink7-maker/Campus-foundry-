@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { 
+  CreditCard,
   Store, 
   ShoppingBag, 
   TrendingUp, 
@@ -22,6 +23,7 @@ import {
   Upload,
   Check
 } from 'lucide-react';
+import { supabase } from '../services/supabase';
 import { 
   StudentBusiness, 
   MarketplaceOrder, 
@@ -34,6 +36,8 @@ import {
   fetchDashboardStats, 
   fetchTraderOrders, 
   updateOrderStatus, 
+  confirmDelivery,
+  updateOrderPaymentStatus,
   listProducts, 
   createProduct, 
   updateProduct, 
@@ -116,6 +120,39 @@ export const TraderDashboard: React.FC<TraderDashboardProps> = ({
 
   // Global Error Notice
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Owner bank payout details loaded via get_payment_details RPC
+  const [bankDetails, setBankDetails] = useState<{
+    bank_name?: string;
+    account_number?: string;
+    account_name?: string;
+  } | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    async function loadPaymentDetails() {
+      if (isSupabaseConfigured && activeBiz?.id) {
+        try {
+          const { data } = await supabase.rpc('get_payment_details', { p_business: activeBiz.id });
+          if (isMounted) {
+            if (data) {
+              setBankDetails({
+                bank_name: data.bank_name || undefined,
+                account_number: data.account_number || undefined,
+                account_name: data.account_name || undefined,
+              });
+            } else {
+              setBankDetails(null);
+            }
+          }
+        } catch {
+          if (isMounted) setBankDetails(null);
+        }
+      }
+    }
+    loadPaymentDetails();
+    return () => { isMounted = false; };
+  }, [activeBiz?.id]);
 
   // Load Dashboard Stats
   const loadStats = useCallback(async () => {
@@ -202,7 +239,7 @@ export const TraderDashboard: React.FC<TraderDashboardProps> = ({
     }
   };
 
-  // Submit Delivered PIN
+  // Submit Delivered PIN via confirm_delivery RPC
   const handleVerifyDeliveredPin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!pinModalOrder || !deliveryPinInput.trim()) return;
@@ -211,19 +248,10 @@ export const TraderDashboard: React.FC<TraderDashboardProps> = ({
       setIsVerifyingPin(true);
       setPinError(null);
 
-      const result = await updateOrderStatus({
-        orderId: pinModalOrder.id,
-        status: 'delivered',
-        pin: deliveryPinInput.trim(),
-      });
+      const success = await confirmDelivery(pinModalOrder.id, deliveryPinInput.trim());
 
-      if (!result.ok) {
-        if (result.error === 'wrong_delivery_pin') {
-          const tries = result.attemptsLeft != null ? ` (${result.attemptsLeft} tries left)` : '';
-          setPinError(`That PIN is not correct. Please confirm with the buyer${tries}.`);
-        } else {
-          setPinError(result.error || 'Invalid delivery verification PIN.');
-        }
+      if (!success) {
+        setPinError('That PIN is not correct. Please confirm with the buyer.');
         return;
       }
 
@@ -236,6 +264,18 @@ export const TraderDashboard: React.FC<TraderDashboardProps> = ({
       setPinError(mapMarketplaceError(err));
     } finally {
       setIsVerifyingPin(false);
+    }
+  };
+
+  // Trader updates payment status directly
+  const handleUpdatePaymentStatus = async (orderId: string, paymentStatus: 'pending' | 'paid' | 'failed' | 'refunded') => {
+    try {
+      await updateOrderPaymentStatus(orderId, paymentStatus);
+      setOrders((prev) =>
+        prev.map((o) => (o.id === orderId ? { ...o, paymentStatus } : o))
+      );
+    } catch (err: unknown) {
+      alert(mapMarketplaceError(err));
     }
   };
 
@@ -565,6 +605,36 @@ export const TraderDashboard: React.FC<TraderDashboardProps> = ({
             </div>
           </div>
 
+          {/* Owner Bank Payment Details Card (Loaded via get_payment_details RPC) */}
+          <div className="p-4 rounded-2xl bg-neutral-900 border border-neutral-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400">
+                <CreditCard className="h-5 w-5" />
+              </div>
+              <div>
+                <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
+                  <span>Bank Payout Details</span>
+                  <span className="px-1.5 py-0.5 rounded text-[10px] bg-amber-500/10 text-amber-300 font-normal">RPC Verified</span>
+                </h4>
+                <p className="text-[11px] text-neutral-400">Secured bank transfer destination for customer payouts</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-3 text-xs w-full sm:w-auto bg-neutral-950 px-4 py-2.5 rounded-xl border border-neutral-800">
+              <div>
+                <span className="text-[10px] text-neutral-500 block uppercase font-semibold">Bank Name</span>
+                <span className="font-semibold text-white">{bankDetails?.bank_name || 'Not Configured'}</span>
+              </div>
+              <div>
+                <span className="text-[10px] text-neutral-500 block uppercase font-semibold">Account Number</span>
+                <span className="font-mono font-semibold text-amber-400">{bankDetails?.account_number || 'Not Configured'}</span>
+              </div>
+              <div>
+                <span className="text-[10px] text-neutral-500 block uppercase font-semibold">Account Name</span>
+                <span className="font-semibold text-white">{bankDetails?.account_name || 'Not Configured'}</span>
+              </div>
+            </div>
+          </div>
+
           {/* Simple 30-Day Revenue Bar Chart */}
           <div className="p-5 rounded-3xl bg-neutral-900 border border-neutral-800 space-y-3">
             <div className="flex items-center justify-between">
@@ -728,6 +798,20 @@ export const TraderDashboard: React.FC<TraderDashboardProps> = ({
                             Notes: "{order.notes}"
                           </p>
                         )}
+                        <div className="flex items-center gap-2 pt-1 text-[11px] text-neutral-400">
+                          <span>Payment: <strong className="text-white capitalize">{order.paymentMethod === 'transfer' ? 'Bank Transfer' : 'Pay on Delivery'}</strong></span>
+                          <select
+                            value={order.paymentStatus || 'pending'}
+                            onChange={(e) => handleUpdatePaymentStatus(order.id, e.target.value as any)}
+                            className="bg-neutral-800 text-amber-300 font-bold px-2 py-0.5 rounded border border-neutral-700 text-[10px] cursor-pointer"
+                            title="Update payment status"
+                          >
+                            <option value="pending">Pending</option>
+                            <option value="paid">Paid</option>
+                            <option value="failed">Failed</option>
+                            <option value="refunded">Refunded</option>
+                          </select>
+                        </div>
                       </div>
 
                       <div className="flex items-center gap-3 sm:justify-end">

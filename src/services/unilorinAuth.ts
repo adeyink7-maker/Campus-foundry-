@@ -1,4 +1,4 @@
-import { supabase, isSupabaseConfigured, formatSupabaseErrorMessage } from './supabase';
+import { supabase, isSupabaseConfigured, formatSupabaseErrorMessage, ALLOWED_PROFILES_READ_COLUMNS } from './supabase';
 import { AppUser, UserRole, StudentLevel } from '../types';
 
 export const UNILORIN_DOMAIN = 'students.unilorin.edu.ng';
@@ -209,12 +209,17 @@ export async function signInWithEmailPassword(params: SignInParams): Promise<{
 
   const authUser = data.user;
 
-  // Retrieve user profile
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('*')
-    .eq('id', authUser.id)
-    .maybeSingle();
+  // Retrieve user profile using get_my_profile RPC
+  const { data: myProfile } = await supabase.rpc('get_my_profile');
+  let profile = myProfile;
+  if (!profile) {
+    const { data: fallback } = await supabase
+      .from('profiles')
+      .select(ALLOWED_PROFILES_READ_COLUMNS)
+      .eq('id', authUser.id)
+      .maybeSingle();
+    profile = fallback;
+  }
 
   const appUser: AppUser = {
     id: authUser.id,
@@ -377,12 +382,17 @@ export async function verifyStudentEmailOTP(params: VerifyOtpParams): Promise<Ve
   const user = data.user;
   const matric = validation.matricNumber || normalized.split('@')[0];
 
-  // Fetch existing profile from Supabase profiles table
-  const { data: existingProfile } = await supabase
-    .from('profiles')
-    .select('*')
-    .eq('id', user.id)
-    .maybeSingle();
+  // Fetch existing profile using get_my_profile RPC
+  const { data: myProfile } = await supabase.rpc('get_my_profile');
+  let existingProfile = myProfile;
+  if (!existingProfile) {
+    const { data: fallback } = await supabase
+      .from('profiles')
+      .select(ALLOWED_PROFILES_READ_COLUMNS)
+      .eq('id', user.id)
+      .maybeSingle();
+    existingProfile = fallback;
+  }
 
   const needsOnboarding = !existingProfile || !existingProfile.full_name || existingProfile.full_name === 'Campus Student' || !existingProfile.level || !existingProfile.department;
 

@@ -10,6 +10,7 @@ import { PlayerCardProvider } from './context/PlayerCardContext';
 import { PlayerCardOverlay } from './components/playercard/PlayerCardOverlay';
 import { PlayerCardEditorModal } from './components/playercard/PlayerCardEditorModal';
 import { RootNavigator } from './mobile/navigation/RootNavigator';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 function WelcomeLandingScreen({ onOpenAuth }: { onOpenAuth: () => void }) {
   return (
@@ -123,6 +124,7 @@ import {
   resetDatabaseToZero,
   deletePostsByUserInSupabase,
   fetchPagePostsFromSupabase,
+  ALLOWED_PROFILES_READ_COLUMNS,
 } from './services/supabase';
 
 const STORAGE_BUSINESSES_KEY = 'campus_foundry_custom_businesses_v4';
@@ -224,7 +226,8 @@ function MainApp() {
       } catch {}
     } catch (err: any) {
       console.warn('[Supabase loadBusinesses Error]:', err);
-      setBusinessesError('Unable to load campus traders. Please check your connection and try again.');
+      const rawMsg = err?.message || err?.details || String(err || 'Unable to load campus traders.');
+      setBusinessesError(rawMsg);
     } finally {
       setIsLoadingBusinesses(false);
     }
@@ -267,14 +270,14 @@ function MainApp() {
         try {
           const { data, error } = await supabase
             .from('profiles')
-            .select('*')
+            .select(ALLOWED_PROFILES_READ_COLUMNS)
             .eq('id', userId)
             .maybeSingle();
 
           if (data && !error) {
             setTargetProfileUser({
               id: data.id,
-              email: data.email || `${data.username || 'student'}@unilorin.edu.ng`,
+              email: '',
               fullName: data.full_name || 'Campus Student',
               username: data.username || `@student_${data.id.slice(0, 5)}`,
               role: (data.role as UserRole) || 'student',
@@ -372,10 +375,11 @@ function MainApp() {
       try {
         localStorage.setItem(STORAGE_SNAPS_KEY, JSON.stringify(remoteSnaps || []));
       } catch {}
-    } catch (err) {
+    } catch (err: any) {
       console.warn('[Supabase Sync] Background data load warning:', err);
-      setPostsError("Couldn't load campus feed. Tap to retry.");
-      setSnapsError("Couldn't load snaps.");
+      const rawMsg = err?.message || err?.details || String(err || "Couldn't load campus feed.");
+      setPostsError(rawMsg);
+      setSnapsError(rawMsg);
     } finally {
       setIsLoadingPosts(false);
       setIsLoadingSnaps(false);
@@ -987,16 +991,18 @@ function MainApp() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <ChatProvider>
-        <MarketplaceChatProvider>
-          <CartProvider>
-            <PlayerCardProvider>
-              <MainApp />
-            </PlayerCardProvider>
-          </CartProvider>
-        </MarketplaceChatProvider>
-      </ChatProvider>
-    </AuthProvider>
+    <ErrorBoundary>
+      <AuthProvider>
+        <ChatProvider>
+          <MarketplaceChatProvider>
+            <CartProvider>
+              <PlayerCardProvider>
+                <MainApp />
+              </PlayerCardProvider>
+            </CartProvider>
+          </MarketplaceChatProvider>
+        </ChatProvider>
+      </AuthProvider>
+    </ErrorBoundary>
   );
 }

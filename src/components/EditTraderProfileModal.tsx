@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
-import { X, Store, Plus, Trash2, Check, ShieldCheck, Clock, MapPin, Phone, Tag, Power } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { X, Store, Plus, Trash2, Check, ShieldCheck, Clock, MapPin, Phone, Tag, Power, CreditCard } from 'lucide-react';
 import { StudentBusiness, StudentServiceItem } from '../types';
 import { HostelSelectMenu } from './HostelSelectMenu';
+import { supabase, isSupabaseConfigured } from '../services/supabase';
 
 export interface EditTraderProfileModalProps {
   business: StudentBusiness;
@@ -36,6 +37,33 @@ export const EditTraderProfileModal: React.FC<EditTraderProfileModalProps> = ({
   const [newSvcType, setNewSvcType] = useState<'good' | 'service'>('good');
 
   const [savedToast, setSavedToast] = useState(false);
+
+  // Bank payout details loaded via get_payment_details RPC for owner
+  const [bankDetails, setBankDetails] = useState<{
+    bank_name?: string;
+    account_number?: string;
+    account_name?: string;
+  } | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    async function loadPaymentDetails() {
+      if (isOpen && isSupabaseConfigured && business?.id) {
+        try {
+          const { data } = await supabase.rpc('get_payment_details', { p_business: business.id });
+          if (isMounted && data) {
+            setBankDetails({
+              bank_name: data.bank_name || undefined,
+              account_number: data.account_number || undefined,
+              account_name: data.account_name || undefined,
+            });
+          }
+        } catch {}
+      }
+    }
+    loadPaymentDetails();
+    return () => { isMounted = false; };
+  }, [isOpen, business?.id]);
 
   if (!isOpen) return null;
 
@@ -248,6 +276,28 @@ export const EditTraderProfileModal: React.FC<EditTraderProfileModalProps> = ({
               onChange={(e) => setImageUrl(e.target.value)}
               className="w-full px-3 py-2 rounded-xl bg-neutral-800 border border-neutral-700 text-xs text-white focus:outline-none focus:border-amber-400"
             />
+          </div>
+
+          {/* Owner Bank Payout Details (from get_payment_details RPC) */}
+          <div className="p-3.5 rounded-2xl bg-neutral-950/80 border border-amber-500/30 space-y-2">
+            <div className="flex items-center gap-2 text-amber-400 font-bold text-xs">
+              <CreditCard className="h-4 w-4" />
+              <span>Owner Bank Payment Details (via RPC)</span>
+            </div>
+            <div className="grid grid-cols-3 gap-2 text-[11px] text-neutral-300">
+              <div>
+                <span className="text-neutral-500 block">Bank Name</span>
+                <span className="font-semibold text-white">{bankDetails?.bank_name || 'Not Configured'}</span>
+              </div>
+              <div>
+                <span className="text-neutral-500 block">Account Number</span>
+                <span className="font-mono font-semibold text-amber-400">{bankDetails?.account_number || 'Not Configured'}</span>
+              </div>
+              <div>
+                <span className="text-neutral-500 block">Account Name</span>
+                <span className="font-semibold text-white">{bankDetails?.account_name || 'Not Configured'}</span>
+              </div>
+            </div>
           </div>
 
           {/* Goods & Services Catalog Management */}

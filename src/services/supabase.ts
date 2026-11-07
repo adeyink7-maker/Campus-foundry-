@@ -1027,15 +1027,18 @@ export async function addCampusCommentInSupabase(comment: CampusComment): Promis
 }
 
 // ============================================================================
-// SUPABASE CRUD OPERATIONS FOR STUDENT BUSINESSES
-// ============================================================================
+export const ALLOWED_PROFILES_READ_COLUMNS =
+  'id, full_name, username, role, account_type, university, faculty, department, level, hostel_location, bio, avatar_url, is_verified, is_admin, staff_role, unilorin_domain, posts_count, followers_count, following_count, following_user_ids, created_at, updated_at';
+
+export const ALLOWED_STUDENT_BUSINESSES_READ_COLUMNS =
+  'id, owner_id, name, tagline, description, category, university, campus, hostel_location, owner_name, student_faculty, student_dept, student_level, whatsapp, rating, reviews_count, accepts_hostel_delivery, starting_price, services, image_url, badge, verified_student, created_at, updated_at';
 
 export async function fetchStudentBusinessesFromSupabase(): Promise<StudentBusiness[]> {
   if (!isSupabaseConfigured) return [];
   try {
     const { data, error } = await supabase
       .from('student_businesses')
-      .select('*')
+      .select(ALLOWED_STUDENT_BUSINESSES_READ_COLUMNS)
       .order('created_at', { ascending: false });
 
     if (error) {
@@ -1388,9 +1391,6 @@ export async function recordSnapView(
       .eq('snap_id', safeSnapId);
 
     const totalViews = count || 0;
-    if (totalViews > 0) {
-      await supabase.from('campus_snaps').update({ views_count: totalViews }).eq('id', safeSnapId);
-    }
     return totalViews;
   } catch (err: any) {
     console.warn('[Supabase recordSnapView Exception]:', err?.message || err);
@@ -2705,7 +2705,7 @@ export async function fetchAdminActionLogsFromSupabase(): Promise<AdminActionLog
     const staffIds = Array.from(new Set(data.map((d) => d.staff_id)));
     const { data: profiles } = await supabase
       .from('profiles')
-      .select('id, full_name, email')
+      .select('id, full_name')
       .in('id', staffIds);
 
     const staffMap = new Map<string, any>();
@@ -2723,7 +2723,6 @@ export async function fetchAdminActionLogsFromSupabase(): Promise<AdminActionLog
         details: row.details,
         createdAt: row.created_at,
         staffName: p?.full_name || 'Staff Member',
-        staffEmail: p?.email,
       };
     });
   } catch (err) {
@@ -2742,15 +2741,15 @@ export async function searchUsersForStaffManagementInSupabase(query: string): Pr
 
     const { data, error } = await supabase
       .from('profiles')
-      .select('id, email, full_name, username, role, level, department, faculty, staff_role, is_verified, is_admin, avatar_url')
-      .or(`username.ilike.${q},full_name.ilike.${q},email.ilike.${q}`)
+      .select('id, full_name, username, role, level, department, faculty, staff_role, is_verified, is_admin, avatar_url')
+      .or(`username.ilike.${q},full_name.ilike.${q}`)
       .limit(20);
 
     if (error || !data) return [];
 
     return data.map((row: any) => ({
       id: row.id,
-      email: row.email || '',
+      email: '',
       fullName: row.full_name || 'Student',
       username: row.username || '',
       role: row.role || 'student',
@@ -2995,25 +2994,42 @@ export async function fetchUserProfileByIdFromSupabase(userId: string): Promise<
   if (!isSupabaseConfigured || !userId) return null;
 
   try {
-    const { data: profile, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', userId)
-      .maybeSingle();
+    const { data: { session } } = await supabase.auth.getSession();
+    const isSelf = session?.user?.id === userId;
 
-    if (error || !profile) {
-      if (error && error.code !== 'PGRST116') {
-        console.warn('[fetchUserProfileByIdFromSupabase error]:', error.message);
+    let profile: any = null;
+
+    if (isSelf) {
+      // The logged-in user's own full profile must come from get_my_profile RPC
+      const { data: myProf, error: rpcErr } = await supabase.rpc('get_my_profile');
+      if (!rpcErr && myProf) {
+        profile = myProf;
       }
-      return null;
+    }
+
+    if (!profile) {
+      // Explicit allowed column list for reading profile (never select * or other users' email/matric/whatsapp)
+      const { data: publicProf, error: pubErr } = await supabase
+        .from('profiles')
+        .select(ALLOWED_PROFILES_READ_COLUMNS)
+        .eq('id', userId)
+        .maybeSingle();
+
+      if (pubErr || !publicProf) {
+        if (pubErr && pubErr.code !== 'PGRST116') {
+          console.warn('[fetchUserProfileByIdFromSupabase error]:', pubErr.message);
+        }
+        return null;
+      }
+      profile = publicProf;
     }
 
     const resolvedUser: AppUser = {
       id: profile.id,
-      email: profile.email || '',
+      email: isSelf ? (profile.email || session?.user?.email || '') : '',
       fullName: profile.full_name || 'Campus Student',
-      username: profile.username || profile.email?.split('@')[0] || `student_${profile.id.slice(0, 5)}`,
-      matricNumber: profile.matric_number || profile.email?.split('@')[0],
+      username: profile.username || `student_${profile.id.slice(0, 5)}`,
+      matricNumber: isSelf ? (profile.matric_number || '') : '',
       role: (profile.role as UserRole) || 'student',
       accountType: (profile.account_type as any) || 'BUYER',
       university: profile.university || '',
@@ -3022,7 +3038,7 @@ export async function fetchUserProfileByIdFromSupabase(userId: string): Promise<
       department: profile.department,
       level: (profile.level as StudentLevel) || '300L',
       hostelLocation: profile.hostel_location,
-      whatsapp: profile.whatsapp,
+      whatsapp: isSelf ? profile.whatsapp : undefined,
       isVerified: Boolean(profile.is_verified),
       isAdmin: Boolean(profile.is_admin || profile.role === 'admin' || profile.staff_role),
       staffRole: (profile.staff_role as any) || (profile.role === 'admin' || profile.is_admin ? 'super_admin' : null),
@@ -3033,7 +3049,7 @@ export async function fetchUserProfileByIdFromSupabase(userId: string): Promise<
       followersCount: profile.followers_count || 0,
       followingCount: profile.following_count || 0,
       followingUserIds: profile.following_user_ids || [],
-      blockedUserIds: profile.blocked_user_ids || [],
+      blockedUserIds: isSelf ? (profile.blocked_user_ids || []) : [],
       joinedAt: profile.created_at || new Date().toISOString(),
     };
 

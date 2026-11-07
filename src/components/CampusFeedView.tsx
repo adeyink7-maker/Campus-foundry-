@@ -252,7 +252,7 @@ export const CampusFeedView = ({
             </div>
             <h3 className="text-sm font-bold text-white">Unable to load feed</h3>
             <p className="text-xs text-neutral-400 max-w-xs mx-auto">
-              Check your connection or student portal session and try again.
+              {postsError || 'Check your connection or student portal session and try again.'}
             </p>
             <button
               type="button"

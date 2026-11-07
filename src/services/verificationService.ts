@@ -141,7 +141,7 @@ export async function fetchPendingVerificationRequests(): Promise<VerificationRe
     const userIds = Array.from(new Set(requests.map((r) => r.user_id)));
     const { data: profiles } = await supabase
       .from('profiles')
-      .select('id, full_name, email, faculty, department, level, avatar_url')
+      .select('id, full_name, username, faculty, department, level, avatar_url')
       .in('id', userIds);
 
     const profileMap = new Map<string, any>();
@@ -161,7 +161,7 @@ export async function fetchPendingVerificationRequests(): Promise<VerificationRe
         reviewedAt: r.reviewed_at,
         createdAt: r.created_at,
         applicantName: p?.full_name || 'Student Applicant',
-        applicantEmail: p?.email,
+        applicantUsername: p?.username,
         applicantFaculty: p?.faculty,
         applicantDepartment: p?.department,
         applicantLevel: p?.level as StudentLevel,

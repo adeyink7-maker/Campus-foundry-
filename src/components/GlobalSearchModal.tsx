@@ -38,6 +38,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
   onSelectProduct,
   onSelectPost,
 }) => {
+  const navigate = useNavigate();
   const [query, setQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [activeTab, setActiveTab] = useState<'people' | 'groups' | 'pages' | 'products' | 'posts'>(initialTab);
@@ -128,7 +129,6 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
       localStorage.setItem(RECENT_SEARCHES_KEY, JSON.stringify(updated));
     }
   };
-  const navigate = useNavigate();
 
   const handleItemClick = (item: any) => {
     if (query.trim()) {
